@@ -16,7 +16,12 @@ export async function GET(req: NextRequest) {
 
   const where: Record<string, unknown> = {};
 
-  if (jobId) where.jobId = jobId;
+  if (jobId) {
+    where.jobId = jobId;
+  } else {
+    // When viewing the schedule calendar (no specific job), only show ACTIVE jobs
+    where.job = { status: "ACTIVE" };
+  }
   if (userId) where.userId = userId;
 
   if (date) {

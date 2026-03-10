@@ -27,17 +27,21 @@ export default function JobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [copyModal, setCopyModal] = useState<{ id: string; name: string } | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
-  const fetchJobs = async () => {
-    const res = await fetch("/api/jobs");
+  const fetchJobs = async (archived = false) => {
+    setLoading(true);
+    const url = archived ? "/api/jobs?status=archived" : "/api/jobs";
+    const res = await fetch(url);
     const data = await res.json();
     setJobs(data);
     setLoading(false);
   };
 
   useEffect(() => {
-    fetchJobs();
-  }, []);
+    fetchJobs(showArchived);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showArchived]);
 
   return (
     <Layout>
@@ -45,26 +49,47 @@ export default function JobsPage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Jobs</h1>
-            <p className="text-gray-500 text-sm mt-0.5">{jobs.length} projects</p>
+            <p className="text-gray-500 text-sm mt-0.5">{jobs.length} {showArchived ? "archived" : "active"} projects</p>
           </div>
-          <Link href="/jobs/new">
-            <button className="bg-blue-600 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
-              + New Job
-            </button>
-          </Link>
+          <div className="flex items-center gap-3">
+            {/* Archived toggle */}
+            <div className="flex bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setShowArchived(false)}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${!showArchived ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}
+              >
+                Active
+              </button>
+              <button
+                onClick={() => setShowArchived(true)}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${showArchived ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}
+              >
+                Archived
+              </button>
+            </div>
+            <Link href="/jobs/new">
+              <button className="bg-blue-600 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors">
+                + New Job
+              </button>
+            </Link>
+          </div>
         </div>
 
         {loading ? (
           <div className="text-gray-400 text-center py-12">Loading jobs...</div>
         ) : jobs.length === 0 ? (
           <div className="text-center py-16">
-            <div className="text-5xl mb-3">🏗️</div>
-            <p className="text-gray-500">No jobs yet. Create your first project.</p>
-            <Link href="/jobs/new">
-              <button className="mt-4 bg-blue-600 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-700">
-                Create Job
-              </button>
-            </Link>
+            <div className="text-5xl mb-3">{showArchived ? "📦" : "🏗️"}</div>
+            <p className="text-gray-500">
+              {showArchived ? "No archived jobs." : "No jobs yet. Create your first project."}
+            </p>
+            {!showArchived && (
+              <Link href="/jobs/new">
+                <button className="mt-4 bg-blue-600 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-700">
+                  Create Job
+                </button>
+              </Link>
+            )}
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -117,7 +142,7 @@ export default function JobsPage() {
           onClose={() => setCopyModal(null)}
           onSuccess={(newId) => {
             setCopyModal(null);
-            fetchJobs();
+            fetchJobs(showArchived);
             router.push(`/jobs/${newId}`);
           }}
         />

@@ -120,6 +120,7 @@ export default function JobDetailPage() {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [loading, setLoading] = useState(true);
   const [copyModal, setCopyModal] = useState(false);
+  const [archiving, setArchiving] = useState(false);
 
   // Overview editing
   const [editing, setEditing] = useState(false);
@@ -245,6 +246,17 @@ export default function JobDetailPage() {
       }),
     });
     setEditing(false);
+    fetchJob();
+  };
+
+  const setJobStatus = async (status: string) => {
+    setArchiving(true);
+    await fetch(`/api/jobs/${jobId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    setArchiving(false);
     fetchJob();
   };
 
@@ -630,18 +642,42 @@ export default function JobDetailPage() {
               <>
                 <div className="flex justify-between items-start mb-4">
                   <h2 className="font-semibold text-gray-900">Job Details</h2>
-                  <button
-                    onClick={() => {
-                      setEditing(true);
-                      setEditName(job.name);
-                      setEditAddress(job.address);
-                      setEditDescription(job.description || "");
-                      setEditStatus(job.status);
-                    }}
-                    className="text-sm text-blue-600 hover:text-blue-800"
-                  >
-                    Edit
-                  </button>
+                  <div className="flex items-center gap-3">
+                    {session?.user?.role === "ADMIN" && job.status !== "ARCHIVED" && (
+                      <button
+                        onClick={() => {
+                          if (confirm("Archive this job? It will be hidden from schedules.")) {
+                            setJobStatus("ARCHIVED");
+                          }
+                        }}
+                        disabled={archiving}
+                        className="text-sm text-gray-500 hover:text-gray-700 border border-gray-300 px-3 py-1 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {archiving ? "Archiving…" : "Archive Job"}
+                      </button>
+                    )}
+                    {session?.user?.role === "ADMIN" && job.status === "ARCHIVED" && (
+                      <button
+                        onClick={() => setJobStatus("ACTIVE")}
+                        disabled={archiving}
+                        className="text-sm text-green-600 hover:text-green-800 border border-green-300 px-3 py-1 rounded-lg hover:bg-green-50 disabled:opacity-50"
+                      >
+                        {archiving ? "Restoring…" : "Restore Job"}
+                      </button>
+                    )}
+                    <button
+                      onClick={() => {
+                        setEditing(true);
+                        setEditName(job.name);
+                        setEditAddress(job.address);
+                        setEditDescription(job.description || "");
+                        setEditStatus(job.status);
+                      }}
+                      className="text-sm text-blue-600 hover:text-blue-800"
+                    >
+                      Edit
+                    </button>
+                  </div>
                 </div>
                 <dl className="space-y-3">
                   <div>

@@ -76,3 +76,35 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 
   return NextResponse.json(user);
 }
+
+export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+  const session = await getServerSession(authOptions);
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (session.user.role !== "ADMIN") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Cannot delete yourself
+  if (params.id === session.user.id) {
+    return NextResponse.json({ error: "You cannot delete your own account." }, { status: 400 });
+  }
+
+  // Check for active schedule assignments
+  const scheduleCount = await prisma.scheduleEntry.count({
+    where: {
+      OR: [{ userId: params.id }, { supervisorId: params.id }],
+    },
+  });
+
+  if (scheduleCount > 0) {
+    return NextResponse.json(
+      {
+        error: `Cannot delete: this person has ${scheduleCount} schedule assignment(s). Remove their schedule entries first.`,
+      },
+      { status: 409 }
+    );
+  }
+
+  await prisma.user.delete({ where: { id: params.id } });
+  return NextResponse.json({ success: true });
+}

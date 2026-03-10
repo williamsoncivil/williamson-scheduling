@@ -24,6 +24,8 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<User>>({});
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState("");
 
   // New user form
   const [newName, setNewName] = useState("");
@@ -47,6 +49,25 @@ export default function SettingsPage() {
   }, []);
 
   const isAdmin = session?.user?.role === "ADMIN";
+
+  const deleteUser = async (user: User) => {
+    if (!confirm(`Are you sure you want to remove ${user.name}?`)) return;
+    setDeletingId(user.id);
+    setDeleteError("");
+    try {
+      const res = await fetch(`/api/people/${user.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json();
+        setDeleteError(data.error || "Failed to delete user");
+        return;
+      }
+      fetchUsers();
+    } catch {
+      setDeleteError("Failed to delete user");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const saveEdit = async (id: string) => {
     await fetch(`/api/people/${id}`, {
@@ -116,6 +137,12 @@ export default function SettingsPage() {
           <div className="p-5 border-b border-gray-100">
             <h2 className="font-semibold text-gray-900">Team Members</h2>
           </div>
+          {deleteError && (
+            <div className="mx-5 mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              {deleteError}
+              <button onClick={() => setDeleteError("")} className="ml-2 text-red-400 hover:text-red-600">✕</button>
+            </div>
+          )}
           {loading ? (
             <div className="p-5 text-gray-400">Loading...</div>
           ) : (
@@ -188,15 +215,26 @@ export default function SettingsPage() {
                         {user.phone && <p className="text-xs text-gray-400">{user.phone}</p>}
                       </div>
                       {isAdmin && (
-                        <button
-                          onClick={() => {
-                            setEditingId(user.id);
-                            setEditData({});
-                          }}
-                          className="text-sm text-blue-600 hover:text-blue-800 shrink-0"
-                        >
-                          Edit
-                        </button>
+                        <div className="flex items-center gap-3 shrink-0">
+                          <button
+                            onClick={() => {
+                              setEditingId(user.id);
+                              setEditData({});
+                            }}
+                            className="text-sm text-blue-600 hover:text-blue-800"
+                          >
+                            Edit
+                          </button>
+                          {user.id !== session?.user?.id && (
+                            <button
+                              onClick={() => deleteUser(user)}
+                              disabled={deletingId === user.id}
+                              className="text-sm text-red-500 hover:text-red-700 disabled:opacity-50"
+                            >
+                              {deletingId === user.id ? "Deleting…" : "Delete"}
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
