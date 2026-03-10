@@ -95,7 +95,7 @@ async function main() {
   for (const item of items) {
     for (const a of item.assignees) assigneeNames.add(a.name);
   }
-  console.log(`\n👤 Unique assignees: ${[...assigneeNames].join(', ')}`);
+  console.log(`\n👤 Unique assignees: ${Array.from(assigneeNames).join(', ')}`);
 
   const passwordHash = await bcrypt.hash('changeme123', 10);
   const userMap = new Map<string, string>(); // name → prisma user id
