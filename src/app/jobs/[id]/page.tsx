@@ -22,6 +22,16 @@ interface Job {
   _count: { messages: number; documents: number };
 }
 
+interface PhaseDependency {
+  id: string;
+  predecessorId: string;
+  successorId: string;
+  type: "FINISH_TO_START" | "START_TO_START" | "FINISH_TO_FINISH" | "START_TO_FINISH";
+  lagDays: number;
+  predecessor?: { id: string; name: string; startDate: string | null; endDate: string | null };
+  successor?: { id: string; name: string };
+}
+
 interface Phase {
   id: string;
   name: string;
@@ -30,6 +40,8 @@ interface Phase {
   startDate: string | null;
   endDate: string | null;
   dependsOnId: string | null;
+  predecessorDeps?: PhaseDependency[];
+  successorDeps?: PhaseDependency[];
 }
 
 interface ScheduleEntry {
@@ -139,6 +151,17 @@ export default function JobDetailPage() {
   const [cascadeModal, setCascadeModal] = useState<CascadeModal | null>(null);
   const [savingPhase, setSavingPhase] = useState(false);
 
+  // Dependency management
+  const [phaseDeps, setPhaseDeps] = useState<Record<string, { predecessorDeps: PhaseDependency[]; successorDeps: PhaseDependency[] }>>({});
+  const [addDepModal, setAddDepModal] = useState<{ phaseId: string; phaseName: string } | null>(null);
+  const [depPredecessorId, setDepPredecessorId] = useState("");
+  const [depType, setDepType] = useState<"FINISH_TO_START" | "START_TO_START" | "FINISH_TO_FINISH" | "START_TO_FINISH">("FINISH_TO_START");
+  const [depLagDays, setDepLagDays] = useState(0);
+  const [savingDep, setSavingDep] = useState(false);
+
+  // Cascade toast
+  const [cascadeToast, setCascadeToast] = useState<{ count: number; phases: Array<{ name: string; startDate: string | null; endDate: string | null }> } | null>(null);
+
   // Schedule
   const [scheduleEntries, setScheduleEntries] = useState<ScheduleEntry[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -179,6 +202,17 @@ export default function JobDetailPage() {
     const data = await res.json();
     setJob(data);
     setLoading(false);
+    // Fetch dependencies for all phases
+    if (data.phases?.length) {
+      const depsMap: Record<string, { predecessorDeps: PhaseDependency[]; successorDeps: PhaseDependency[] }> = {};
+      await Promise.all(
+        data.phases.map(async (phase: Phase) => {
+          const r = await fetch(`/api/phases/${phase.id}/dependencies`);
+          if (r.ok) depsMap[phase.id] = await r.json();
+        })
+      );
+      setPhaseDeps(depsMap);
+    }
   }, [jobId]);
 
   const fetchSchedule = useCallback(async () => {
@@ -350,11 +384,25 @@ export default function JobDetailPage() {
   };
 
   const commitPhaseDates = async (phaseId: string, startDate: string, endDate: string) => {
+    // Use both the old move endpoint (for old dependsOnId cascade) and new PATCH endpoint (for PhaseDependency cascade)
     await fetch(`/api/jobs/${jobId}/phases/${phaseId}/move`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ startDate, endDate, preview: false }),
     });
+    // Also trigger new cascade system
+    const res = await fetch(`/api/phases/${phaseId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ startDate, endDate }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.cascadedPhases?.length > 0) {
+        setCascadeToast({ count: data.cascadedPhases.length, phases: data.cascadedPhases });
+        setTimeout(() => setCascadeToast(null), 7000);
+      }
+    }
   };
 
   const confirmCascade = async () => {
@@ -371,6 +419,51 @@ export default function JobDetailPage() {
     setEditingPhaseId(null);
     setSavingPhase(false);
     fetchJob();
+  };
+
+  const openAddDepModal = (phase: Phase) => {
+    setAddDepModal({ phaseId: phase.id, phaseName: phase.name });
+    setDepPredecessorId("");
+    setDepType("FINISH_TO_START");
+    setDepLagDays(0);
+  };
+
+  const saveNewDependency = async () => {
+    if (!addDepModal || !depPredecessorId) return;
+    setSavingDep(true);
+    try {
+      const res = await fetch(`/api/phases/${addDepModal.phaseId}/dependencies`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ predecessorId: depPredecessorId, type: depType, lagDays: depLagDays }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.error || "Failed to add dependency");
+        return;
+      }
+      setAddDepModal(null);
+      fetchJob();
+    } finally {
+      setSavingDep(false);
+    }
+  };
+
+  const removeDependency = async (phaseId: string, predecessorId: string) => {
+    if (!confirm("Remove this dependency?")) return;
+    await fetch(`/api/phases/${phaseId}/dependencies?predecessorId=${predecessorId}`, {
+      method: "DELETE",
+    });
+    fetchJob();
+  };
+
+  const depTypeLabel = (type: PhaseDependency["type"]) => {
+    switch (type) {
+      case "FINISH_TO_START": return "Finish → Start";
+      case "START_TO_START": return "Start → Start";
+      case "FINISH_TO_FINISH": return "Finish → Finish";
+      case "START_TO_FINISH": return "Start → Finish";
+    }
   };
 
   const addScheduleEntry = async (e: React.FormEvent) => {
@@ -769,10 +862,22 @@ export default function JobDetailPage() {
                 <p className="text-gray-400 text-sm">No phases yet</p>
               ) : (
                 <div className="space-y-3">
-                  {phases.map((phase, idx) => (
-                    <div key={phase.id} className="border border-gray-200 rounded-xl overflow-hidden">
+                  {phases.map((phase, idx) => {
+                    const deps = phaseDeps[phase.id] ?? { predecessorDeps: [], successorDeps: [] };
+                    const hasDeps = deps.predecessorDeps.length > 0 || deps.successorDeps.length > 0;
+
+                    // Blocked: any predecessor whose endDate is in the future
+                    const now = new Date();
+                    const blockers = deps.predecessorDeps.filter((d) => {
+                      const predEnd = d.predecessor?.endDate ? new Date(d.predecessor.endDate) : null;
+                      return predEnd && predEnd > now;
+                    });
+                    const isBlocked = blockers.length > 0;
+
+                    return (
+                    <div key={phase.id} className={`border rounded-xl overflow-hidden ${isBlocked ? "border-amber-300" : "border-gray-200"}`}>
                       {/* Phase header */}
-                      <div className="flex items-center gap-3 p-3 bg-gray-50">
+                      <div className={`flex items-center gap-3 p-3 ${isBlocked ? "bg-amber-50" : "bg-gray-50"}`}>
                         <div className="flex flex-col gap-0.5">
                           <button onClick={() => movePhase(phase, "up", phases)} disabled={idx === 0}
                             className="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-30 leading-none">▲</button>
@@ -780,8 +885,19 @@ export default function JobDetailPage() {
                             className="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-30 leading-none">▼</button>
                         </div>
                         <span className="text-xs text-gray-400 w-5 text-center">{idx + 1}</span>
-                        <div className="flex-1">
-                          <p className="font-medium text-gray-900 text-sm">{phase.name}</p>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="font-medium text-gray-900 text-sm">{phase.name}</p>
+                            {hasDeps && <span title="Has dependencies" className="text-sm">🔗</span>}
+                            {isBlocked && (
+                              <span
+                                title={`Waiting on: ${blockers.map((d) => d.predecessor?.name).join(", ")}`}
+                                className="text-sm cursor-help"
+                              >
+                                🔒
+                              </span>
+                            )}
+                          </div>
                           {phase.description && <p className="text-xs text-gray-500">{phase.description}</p>}
                           {(phase.startDate || phase.endDate) && (
                             <p className="text-xs text-blue-600 mt-0.5">
@@ -796,7 +912,7 @@ export default function JobDetailPage() {
                             </p>
                           )}
                         </div>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 shrink-0">
                           <button
                             onClick={() => editingPhaseId === phase.id ? setEditingPhaseId(null) : startEditPhaseDates(phase)}
                             className="text-sm text-blue-600 hover:text-blue-800"
@@ -807,6 +923,55 @@ export default function JobDetailPage() {
                             Delete
                           </button>
                         </div>
+                      </div>
+
+                      {/* Dependencies section */}
+                      <div className="px-4 py-3 border-t border-gray-100 bg-white">
+                        {/* Predecessors */}
+                        {deps.predecessorDeps.length > 0 && (
+                          <div className="mb-2">
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Predecessors</p>
+                            <div className="space-y-1">
+                              {deps.predecessorDeps.map((d) => (
+                                <div key={d.predecessorId} className="flex items-center justify-between gap-2 text-xs">
+                                  <span className="text-gray-700">
+                                    <span className="font-medium">{d.predecessor?.name}</span>
+                                    {" "}
+                                    <span className="text-gray-400">({depTypeLabel(d.type)}{d.lagDays > 0 ? ` + ${d.lagDays}d` : ""})</span>
+                                  </span>
+                                  <button
+                                    onClick={() => removeDependency(phase.id, d.predecessorId)}
+                                    className="text-red-400 hover:text-red-600 ml-2 shrink-0"
+                                    title="Remove dependency"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {/* Successors */}
+                        {deps.successorDeps.length > 0 && (
+                          <div className="mb-2">
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Blocks</p>
+                            <div className="space-y-1">
+                              {deps.successorDeps.map((d) => (
+                                <div key={d.successorId} className="text-xs text-gray-600">
+                                  🔗 <span className="font-medium">{d.successor?.name}</span>
+                                  {" "}
+                                  <span className="text-gray-400">({depTypeLabel(d.type)}{d.lagDays > 0 ? ` + ${d.lagDays}d` : ""})</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        <button
+                          onClick={() => openAddDepModal(phase)}
+                          className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          + Add Predecessor
+                        </button>
                       </div>
 
                       {/* Phase date editor */}
@@ -857,7 +1022,8 @@ export default function JobDetailPage() {
                         </div>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -1268,6 +1434,105 @@ export default function JobDetailPage() {
         sourceJobName={job.name}
         onClose={() => setCopyModal(false)}
       />
+
+      {/* Cascade Toast */}
+      {cascadeToast && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-sm w-full bg-blue-600 text-white rounded-xl shadow-2xl p-4 animate-in slide-in-from-bottom-4">
+          <div className="flex items-start gap-3">
+            <span className="text-xl shrink-0">📅</span>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-sm">
+                {cascadeToast.count} phase{cascadeToast.count !== 1 ? "s" : ""} automatically rescheduled
+              </p>
+              <div className="mt-1.5 space-y-1">
+                {cascadeToast.phases.map((p, i) => (
+                  <p key={i} className="text-xs text-blue-100">
+                    <span className="font-medium">{p.name}</span>
+                    {p.startDate && p.endDate && (
+                      <span>
+                        {" → "}{format(parseISO(p.startDate), "MMM d")}–{format(parseISO(p.endDate), "MMM d, yyyy")}
+                      </span>
+                    )}
+                  </p>
+                ))}
+              </div>
+            </div>
+            <button onClick={() => setCascadeToast(null)} className="text-blue-200 hover:text-white shrink-0 text-lg leading-none">
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Add Predecessor Modal */}
+      {addDepModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Add Predecessor</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Choose a phase that must complete before <strong>{addDepModal.phaseName}</strong> can start.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Predecessor Phase</label>
+                <select
+                  value={depPredecessorId}
+                  onChange={(e) => setDepPredecessorId(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">— Select a phase —</option>
+                  {phases.filter((p) => p.id !== addDepModal.phaseId).map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Dependency Type</label>
+                <select
+                  value={depType}
+                  onChange={(e) => setDepType(e.target.value as typeof depType)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="FINISH_TO_START">Finish → Start (most common)</option>
+                  <option value="START_TO_START">Start → Start</option>
+                  <option value="FINISH_TO_FINISH">Finish → Finish</option>
+                  <option value="START_TO_FINISH">Start → Finish (rare)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Lag Days (default: 0)</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={depLagDays}
+                  onChange={(e) => setDepLagDays(parseInt(e.target.value) || 0)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">Days to wait after the dependency condition is met</p>
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setAddDepModal(null)}
+                className="flex-1 border border-gray-300 text-gray-700 py-2 px-4 rounded-lg text-sm hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveNewDependency}
+                disabled={savingDep || !depPredecessorId}
+                className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                {savingDep ? "Saving..." : "Add Dependency"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }

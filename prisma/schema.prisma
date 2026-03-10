@@ -41,21 +41,44 @@ model Job {
 }
 
 model Phase {
-  id          String          @id @default(cuid())
-  name        String
-  description String?
-  orderIndex  Int             @default(0)
-  jobId       String
-  job         Job             @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  startDate   DateTime?
-  endDate     DateTime?
-  dependsOnId String?
-  dependsOn   Phase?          @relation("PhaseDeps", fields: [dependsOnId], references: [id])
-  dependents  Phase[]         @relation("PhaseDeps")
-  schedules   ScheduleEntry[]
-  messages    Message[]
-  documents   Document[]
-  production  ProductionLog[]
+  id              String            @id @default(cuid())
+  name            String
+  description     String?
+  orderIndex      Int               @default(0)
+  jobId           String
+  job             Job               @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  startDate       DateTime?
+  endDate         DateTime?
+  dependsOnId     String?
+  dependsOn       Phase?            @relation("PhaseDeps", fields: [dependsOnId], references: [id])
+  dependents      Phase[]           @relation("PhaseDeps")
+  predecessorDeps PhaseDependency[] @relation("PredecessorDeps")
+  successorDeps   PhaseDependency[] @relation("SuccessorDeps")
+  schedules       ScheduleEntry[]
+  messages        Message[]
+  documents       Document[]
+  production      ProductionLog[]
+}
+
+model PhaseDependency {
+  id            String         @id @default(cuid())
+  predecessorId String
+  successorId   String
+  type          DependencyType @default(FINISH_TO_START)
+  lagDays       Int            @default(0)
+  createdAt     DateTime       @default(now())
+
+  predecessor Phase @relation("PredecessorDeps", fields: [predecessorId], references: [id], onDelete: Cascade)
+  successor   Phase @relation("SuccessorDeps", fields: [successorId], references: [id], onDelete: Cascade)
+
+  @@unique([predecessorId, successorId])
+}
+
+enum DependencyType {
+  FINISH_TO_START
+  START_TO_START
+  FINISH_TO_FINISH
+  START_TO_FINISH
 }
 
 model ScheduleEntry {
