@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import Layout from "@/components/Layout";
 import Link from "next/link";
 import {
@@ -11,9 +11,6 @@ import {
   addWeeks,
   subWeeks,
   startOfWeek,
-  endOfWeek,
-  startOfMonth,
-  endOfMonth,
   eachDayOfInterval,
   isWeekend,
   isSameDay,
@@ -39,12 +36,15 @@ interface JobWithPhases {
   visible: boolean;
 }
 
-type ViewMode = "week" | "month" | "wholejob";
-
 const ROW_HEIGHT = 44;
 const JOB_HEADER_HEIGHT = 36;
 const BAR_HEIGHT = 26;
 const SIDEBAR_WIDTH = 220;
+const DAY_WIDTH = 20; // px per day — fixed for continuous scroll
+
+// Total continuous range: 26 weeks before today → 26 weeks after today (52 weeks)
+const WEEKS_BEFORE = 8;
+const WEEKS_AFTER = 44;
 
 function getPhaseColor(phase: Phase): string {
   if (!phase.startDate || !phase.endDate) return "#94a3b8";
@@ -59,10 +59,19 @@ function getPhaseColor(phase: Phase): string {
 export default function MasterGanttPage() {
   const [jobs, setJobs] = useState<JobWithPhases[]>([]);
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<ViewMode>("month");
-  const [currentDate, setCurrentDate] = useState(new Date());
   const [popover, setPopover] = useState<{ phase: Phase; jobName: string; x: number; y: number } | null>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const hasScrolledRef = useRef(false);
+
+  // Continuous timeline range
+  const viewStart = startOfWeek(subWeeks(new Date(), WEEKS_BEFORE), { weekStartsOn: 0 });
+  const viewEnd = addDays(addWeeks(viewStart, WEEKS_BEFORE + WEEKS_AFTER), -1);
+  const days = eachDayOfInterval({ start: viewStart, end: viewEnd });
+  const totalDays = days.length;
+  const timelineWidth = totalDays * DAY_WIDTH;
+
+  const todayOffset = differenceInDays(new Date(), viewStart);
+  const todayPx = todayOffset * DAY_WIDTH;
 
   useEffect(() => {
     fetch("/api/jobs")
@@ -80,57 +89,29 @@ export default function MasterGanttPage() {
       });
   }, []);
 
+  // Scroll to today (centered) once data is loaded
+  useEffect(() => {
+    if (!loading && !hasScrolledRef.current && scrollRef.current) {
+      const container = scrollRef.current;
+      const containerWidth = container.clientWidth - SIDEBAR_WIDTH;
+      const scrollTarget = todayPx - containerWidth / 2;
+      container.scrollLeft = Math.max(0, scrollTarget);
+      hasScrolledRef.current = true;
+    }
+  }, [loading, todayPx]);
+
   const visibleJobs = jobs.filter((j) => j.visible);
 
   const toggleJobVisibility = (jobId: string) => {
     setJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, visible: !j.visible } : j)));
   };
 
-  const allPhases = visibleJobs.flatMap((j) => j.phases);
-
-  const getViewRange = useCallback((): { viewStart: Date; viewEnd: Date; dayWidth: number } => {
-    if (viewMode === "week") {
-      const viewStart = startOfWeek(currentDate, { weekStartsOn: 0 });
-      const viewEnd = endOfWeek(currentDate, { weekStartsOn: 0 });
-      return { viewStart, viewEnd, dayWidth: 80 };
+  const scrollToToday = () => {
+    if (scrollRef.current) {
+      const containerWidth = scrollRef.current.clientWidth - SIDEBAR_WIDTH;
+      const scrollTarget = todayPx - containerWidth / 2;
+      scrollRef.current.scrollTo({ left: Math.max(0, scrollTarget), behavior: "smooth" });
     }
-    if (viewMode === "month") {
-      const viewStart = startOfMonth(currentDate);
-      const viewEnd = endOfMonth(currentDate);
-      return { viewStart, viewEnd, dayWidth: 32 };
-    }
-    // Whole job
-    const datedPhases = allPhases.filter((p) => p.startDate && p.endDate);
-    if (datedPhases.length === 0) {
-      const viewStart = startOfMonth(currentDate);
-      const viewEnd = endOfMonth(addWeeks(currentDate, 8));
-      return { viewStart, viewEnd, dayWidth: 20 };
-    }
-    const starts = datedPhases.map((p) => parseISO(p.startDate!));
-    const ends = datedPhases.map((p) => parseISO(p.endDate!));
-    const viewStart = addDays(starts.reduce((a, b) => (a < b ? a : b)), -2);
-    const viewEnd = addDays(ends.reduce((a, b) => (a > b ? a : b)), 2);
-    const totalDays = Math.max(differenceInDays(viewEnd, viewStart) + 1, 1);
-    const containerW = containerRef.current?.clientWidth ?? 800;
-    const availableW = containerW - SIDEBAR_WIDTH;
-    const dayWidth = Math.max(16, Math.floor(availableW / totalDays));
-    return { viewStart, viewEnd, dayWidth };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewMode, currentDate, JSON.stringify(allPhases.map((p) => p.id))]);
-
-  const { viewStart, viewEnd, dayWidth } = getViewRange();
-  const totalDays = Math.max(differenceInDays(viewEnd, viewStart) + 1, 1);
-  const timelineWidth = totalDays * dayWidth;
-  const days = eachDayOfInterval({ start: viewStart, end: viewEnd });
-
-  const prevPeriod = () => {
-    if (viewMode === "week") setCurrentDate((d) => subWeeks(d, 1));
-    else if (viewMode === "month") setCurrentDate((d) => new Date(d.getFullYear(), d.getMonth() - 1, 1));
-  };
-
-  const nextPeriod = () => {
-    if (viewMode === "week") setCurrentDate((d) => addWeeks(d, 1));
-    else if (viewMode === "month") setCurrentDate((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1));
   };
 
   const getBarStyle = (phase: Phase) => {
@@ -140,37 +121,35 @@ export default function MasterGanttPage() {
     const leftDays = differenceInDays(start, viewStart);
     const widthDays = Math.max(differenceInDays(end, start) + 1, 1);
     return {
-      left: leftDays * dayWidth,
-      width: widthDays * dayWidth,
+      left: leftDays * DAY_WIDTH,
+      width: widthDays * DAY_WIDTH,
       color: getPhaseColor(phase),
     };
   };
 
+  // Month labels for the header
   const getMonthLabels = () => {
     const labels: { label: string; left: number }[] = [];
     let lastMonth = -1;
     days.forEach((day, i) => {
       if (day.getMonth() !== lastMonth) {
-        labels.push({ label: format(day, "MMM yyyy"), left: i * dayWidth });
+        labels.push({ label: format(day, "MMM yyyy"), left: i * DAY_WIDTH });
         lastMonth = day.getMonth();
       }
     });
     return labels;
   };
 
-  // Build flat rows with row types
+  // Build flat rows
   type RowItem =
     | { type: "job-header"; job: JobWithPhases; rowIndex: number }
     | { type: "phase"; phase: Phase; job: JobWithPhases; rowIndex: number };
 
   const rows: RowItem[] = [];
-  let rowOffset = 0;
   visibleJobs.forEach((job) => {
-    rows.push({ type: "job-header", job, rowIndex: rowOffset });
-    rowOffset++;
+    rows.push({ type: "job-header", job, rowIndex: rows.length });
     job.phases.forEach((phase) => {
-      rows.push({ type: "phase", phase, job, rowIndex: rowOffset });
-      rowOffset++;
+      rows.push({ type: "phase", phase, job, rowIndex: rows.length });
     });
   });
 
@@ -178,7 +157,6 @@ export default function MasterGanttPage() {
     return acc + (row.type === "job-header" ? JOB_HEADER_HEIGHT : ROW_HEIGHT);
   }, 0);
 
-  // Calculate Y positions for each row
   const rowYPositions: number[] = [];
   let currentY = 0;
   rows.forEach((row) => {
@@ -193,23 +171,17 @@ export default function MasterGanttPage() {
       if (row.type !== "phase") return;
       const { phase } = row;
       if (!phase.dependsOnId) return;
-
-      // Find parent phase in rows
       const parentRowIdx = rows.findIndex(
         (r) => r.type === "phase" && r.phase.id === phase.dependsOnId
       );
       if (parentRowIdx < 0) return;
-
       const parentRow = rows[parentRowIdx];
       if (parentRow.type !== "phase") return;
-
       const childBar = getBarStyle(phase);
       const parentBar = getBarStyle(parentRow.phase);
       if (!childBar || !parentBar) return;
-
       const parentY = rowYPositions[parentRowIdx] + ROW_HEIGHT / 2;
       const childY = rowYPositions[rowIdx] + ROW_HEIGHT / 2;
-
       lines.push({
         x1: parentBar.left + parentBar.width,
         y1: parentY,
@@ -235,6 +207,7 @@ export default function MasterGanttPage() {
   }
 
   const depLines = getDependencyLines();
+  const monthLabels = getMonthLabels();
 
   return (
     <Layout>
@@ -243,31 +216,16 @@ export default function MasterGanttPage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
             <h1 className="text-xl font-bold text-gray-900">Master Gantt Chart</h1>
-            <p className="text-sm text-gray-500 mt-0.5">All active jobs</p>
+            <p className="text-sm text-gray-500 mt-0.5">All active jobs · scroll to navigate · {WEEKS_BEFORE + WEEKS_AFTER} week range</p>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex bg-gray-100 rounded-lg p-1">
-              {(["week", "month", "wholejob"] as ViewMode[]).map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => setViewMode(mode)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                    viewMode === mode ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"
-                  }`}
-                >
-                  {mode === "week" ? "Week" : mode === "month" ? "Month" : "All Jobs"}
-                </button>
-              ))}
-            </div>
-
-            {viewMode !== "wholejob" && (
-              <>
-                <button onClick={prevPeriod} className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600 text-sm">←</button>
-                <button onClick={() => setCurrentDate(new Date())} className="px-3 py-2 border border-gray-300 rounded-lg text-xs hover:bg-gray-50 text-gray-600">Today</button>
-                <button onClick={nextPeriod} className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600 text-sm">→</button>
-              </>
-            )}
+            <button
+              onClick={scrollToToday}
+              className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+            >
+              📍 Jump to Today
+            </button>
 
             <Link
               href="/schedule"
@@ -275,12 +233,19 @@ export default function MasterGanttPage() {
             >
               ← Calendar View
             </Link>
+
+            <Link
+              href="/schedule/timeline"
+              className="px-3 py-2 border border-gray-300 rounded-lg text-xs hover:bg-gray-50 text-gray-600"
+            >
+              Timeline →
+            </Link>
           </div>
         </div>
 
         {/* Job filter */}
         <div className="flex gap-2 flex-wrap mb-4">
-          <span className="text-xs font-medium text-gray-500 self-center">Show/hide jobs:</span>
+          <span className="text-xs font-medium text-gray-500 self-center">Show/hide:</span>
           {jobs.map((job) => (
             <button
               key={job.id}
@@ -306,98 +271,108 @@ export default function MasterGanttPage() {
             No active jobs to display
           </div>
         ) : (
-          <div
-            ref={containerRef}
-            className="bg-white rounded-xl shadow-sm overflow-hidden"
-          >
-            <div className="flex">
-              {/* Left sidebar */}
-              <div
-                className="shrink-0 border-r border-gray-200 bg-white z-10"
-                style={{ width: SIDEBAR_WIDTH }}
-              >
-                {/* Header spacer */}
-                {viewMode === "wholejob" && <div className="h-5 border-b border-gray-100" />}
-                <div className="h-10 border-b border-gray-100 flex items-center px-3">
-                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Job / Phase</span>
-                </div>
+          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+            {/* The outer container scrolls horizontally */}
+            <div
+              ref={scrollRef}
+              className="overflow-x-auto"
+              style={{ position: "relative" }}
+            >
+              <div style={{ display: "flex", width: SIDEBAR_WIDTH + timelineWidth }}>
 
-                {/* Rows */}
-                {rows.map((row, i) => {
-                  if (row.type === "job-header") {
+                {/* ── Sticky left sidebar ───────────────────────────────────── */}
+                <div
+                  className="shrink-0 border-r border-gray-200 bg-white"
+                  style={{
+                    width: SIDEBAR_WIDTH,
+                    position: "sticky",
+                    left: 0,
+                    zIndex: 20,
+                    flexShrink: 0,
+                  }}
+                >
+                  {/* Month label row spacer */}
+                  <div className="h-5 border-b border-gray-100 bg-gray-50 flex items-center px-3">
+                    <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Month</span>
+                  </div>
+                  {/* Day header spacer */}
+                  <div className="h-10 border-b border-gray-100 flex items-center px-3">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Job / Phase</span>
+                  </div>
+
+                  {/* Rows */}
+                  {rows.map((row, i) => {
+                    if (row.type === "job-header") {
+                      return (
+                        <div
+                          key={`job-${row.job.id}`}
+                          className="flex items-center px-3 border-b border-gray-200"
+                          style={{ height: JOB_HEADER_HEIGHT, backgroundColor: row.job.color + "18" }}
+                        >
+                          <div className="w-2 h-2 rounded-full mr-2 shrink-0" style={{ backgroundColor: row.job.color }} />
+                          <Link
+                            href={`/jobs/${row.job.id}`}
+                            className="text-xs font-bold text-gray-900 hover:underline truncate"
+                          >
+                            {row.job.name}
+                          </Link>
+                        </div>
+                      );
+                    }
                     return (
                       <div
-                        key={`job-${row.job.id}`}
-                        className="flex items-center px-3 border-b border-gray-200"
-                        style={{ height: JOB_HEADER_HEIGHT, backgroundColor: row.job.color + "18" }}
+                        key={`phase-${row.phase.id}`}
+                        className="flex items-center px-3 pl-6 border-b border-gray-50"
+                        style={{ height: ROW_HEIGHT }}
                       >
-                        <div className="w-2 h-2 rounded-full mr-2 shrink-0" style={{ backgroundColor: row.job.color }} />
-                        <Link
-                          href={`/jobs/${row.job.id}`}
-                          className="text-xs font-bold text-gray-900 hover:underline truncate"
-                        >
-                          {row.job.name}
-                        </Link>
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-gray-800 truncate">{row.phase.name}</p>
+                          {row.phase.startDate && row.phase.endDate && (
+                            <p className="text-[10px] text-gray-400 truncate">
+                              {format(parseISO(row.phase.startDate), "M/d")} – {format(parseISO(row.phase.endDate), "M/d")}
+                            </p>
+                          )}
+                        </div>
                       </div>
                     );
-                  }
-                  return (
-                    <div
-                      key={`phase-${row.phase.id}`}
-                      className="flex items-center px-3 pl-6 border-b border-gray-50"
-                      style={{ height: ROW_HEIGHT }}
-                    >
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium text-gray-800 truncate">{row.phase.name}</p>
-                        {row.phase.startDate && row.phase.endDate && (
-                          <p className="text-[10px] text-gray-400 truncate">
-                            {format(parseISO(row.phase.startDate), "M/d")} – {format(parseISO(row.phase.endDate), "M/d")}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                  })}
+                </div>
 
-              {/* Timeline */}
-              <div className="flex-1 overflow-x-auto">
-                <div style={{ width: timelineWidth, minWidth: "100%" }}>
-                  {/* Month labels for whole job */}
-                  {viewMode === "wholejob" && (
-                    <div className="relative h-5 border-b border-gray-100 bg-gray-50">
-                      {getMonthLabels().map((ml, i) => (
-                        <div
-                          key={i}
-                          className="absolute top-0 h-full flex items-center"
-                          style={{ left: ml.left }}
-                        >
-                          <span className="text-[10px] font-medium text-gray-500 px-1 bg-gray-50 whitespace-nowrap">{ml.label}</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                {/* ── Timeline area ────────────────────────────────────────── */}
+                <div style={{ width: timelineWidth, flexShrink: 0 }}>
+
+                  {/* Month labels row */}
+                  <div className="relative h-5 border-b border-gray-100 bg-gray-50" style={{ width: timelineWidth }}>
+                    {monthLabels.map((ml, i) => (
+                      <div
+                        key={i}
+                        className="absolute top-0 h-full flex items-center border-l border-gray-200"
+                        style={{ left: ml.left }}
+                      >
+                        <span className="text-[10px] font-semibold text-gray-500 px-1 bg-gray-50 whitespace-nowrap">
+                          {ml.label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
 
                   {/* Day headers */}
                   <div className="relative h-10 border-b border-gray-100 flex" style={{ width: timelineWidth }}>
                     {days.map((day, i) => {
                       const isWeekendDay = isWeekend(day);
                       const isToday = isSameDay(day, new Date());
+                      // Only show label on Mondays or when wide enough
+                      const showLabel = day.getDay() === 1 || DAY_WIDTH >= 28;
                       return (
                         <div
                           key={i}
                           className={`flex-none border-r border-gray-50 flex flex-col items-center justify-center ${isWeekendDay ? "bg-gray-50" : ""} ${isToday ? "bg-blue-50" : ""}`}
-                          style={{ width: dayWidth }}
+                          style={{ width: DAY_WIDTH }}
                         >
-                          {dayWidth >= 28 && (
-                            <>
-                              <span className={`text-[10px] ${isToday ? "text-blue-600" : isWeekendDay ? "text-gray-300" : "text-gray-400"}`}>
-                                {format(day, "EEE").substring(0, 1)}
-                              </span>
-                              <span className={`text-xs font-semibold ${isToday ? "text-blue-600" : isWeekendDay ? "text-gray-400" : "text-gray-600"}`}>
-                                {format(day, "d")}
-                              </span>
-                            </>
+                          {showLabel && DAY_WIDTH >= 18 && (
+                            <span className={`text-[9px] font-semibold leading-none ${isToday ? "text-blue-600" : isWeekendDay ? "text-gray-400" : "text-gray-500"}`}>
+                              {format(day, "d")}
+                            </span>
                           )}
                         </div>
                       );
@@ -406,30 +381,33 @@ export default function MasterGanttPage() {
 
                   {/* Timeline body */}
                   <div className="relative" style={{ height: totalHeight, width: timelineWidth }}>
-                    {/* Weekend columns */}
+
+                    {/* Weekend shading */}
                     {days.map((day, i) =>
                       isWeekend(day) ? (
                         <div
                           key={i}
-                          className="absolute top-0 bottom-0 bg-gray-50/80"
-                          style={{ left: i * dayWidth, width: dayWidth }}
+                          className="absolute top-0 bottom-0 bg-gray-50/80 pointer-events-none"
+                          style={{ left: i * DAY_WIDTH, width: DAY_WIDTH }}
                         />
                       ) : null
                     )}
 
                     {/* Today line */}
-                    {(() => {
-                      const todayOffset = differenceInDays(new Date(), viewStart);
-                      if (todayOffset >= 0 && todayOffset <= totalDays) {
-                        return (
-                          <div
-                            className="absolute top-0 bottom-0 w-px bg-blue-400/60 z-10"
-                            style={{ left: todayOffset * dayWidth }}
-                          />
-                        );
-                      }
-                      return null;
-                    })()}
+                    {todayOffset >= 0 && todayOffset <= totalDays && (
+                      <div
+                        className="absolute top-0 bottom-0 pointer-events-none"
+                        style={{ left: todayPx, zIndex: 10, width: 2, backgroundColor: "rgba(59,130,246,0.7)" }}
+                      />
+                    )}
+
+                    {/* Today column highlight */}
+                    {todayOffset >= 0 && todayOffset <= totalDays && (
+                      <div
+                        className="absolute top-0 bottom-0 bg-blue-50/40 pointer-events-none"
+                        style={{ left: todayPx, width: DAY_WIDTH }}
+                      />
+                    )}
 
                     {/* Job header row backgrounds */}
                     {rows.map((row, i) => {
@@ -437,7 +415,7 @@ export default function MasterGanttPage() {
                       return (
                         <div
                           key={`job-bg-${row.job.id}`}
-                          className="absolute left-0 right-0 border-b border-gray-200"
+                          className="absolute left-0 right-0 border-b border-gray-200 pointer-events-none"
                           style={{
                             top: rowYPositions[i],
                             height: JOB_HEADER_HEIGHT,
@@ -453,7 +431,7 @@ export default function MasterGanttPage() {
                       return (
                         <div
                           key={`divider-${i}`}
-                          className="absolute left-0 right-0 border-b border-gray-50"
+                          className="absolute left-0 right-0 border-b border-gray-50 pointer-events-none"
                           style={{ top: rowYPositions[i] + ROW_HEIGHT - 1 }}
                         />
                       );
@@ -498,7 +476,6 @@ export default function MasterGanttPage() {
                       const bar = getBarStyle(phase);
                       const rowTop = rowYPositions[i];
                       const barTop = rowTop + (ROW_HEIGHT - BAR_HEIGHT) / 2;
-
                       if (!bar) return null;
 
                       return (
@@ -512,6 +489,7 @@ export default function MasterGanttPage() {
                             width: Math.max(bar.width, 4),
                             height: BAR_HEIGHT,
                             backgroundColor: bar.color,
+                            zIndex: 8,
                           }}
                         >
                           {bar.width > 40 && <span className="truncate">{phase.name}</span>}
@@ -536,6 +514,10 @@ export default function MasterGanttPage() {
               <div className="flex items-center gap-1.5">
                 <div className="w-3 h-3 rounded-sm bg-green-500" />
                 <span className="text-xs text-gray-500">Complete</span>
+              </div>
+              <div className="flex items-center gap-1.5 ml-auto">
+                <div className="w-2 h-4 rounded-sm bg-blue-400/70" />
+                <span className="text-xs text-gray-500">Today</span>
               </div>
             </div>
           </div>

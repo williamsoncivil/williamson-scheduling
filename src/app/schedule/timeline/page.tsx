@@ -108,14 +108,15 @@ export default function TimelinePage() {
   const dragDataRef = useRef<{
     phaseId: string;
     jobId: string;
-    origStartDay: number; // day offset from viewStart when drag started
-    barStartDay: number;  // original startDate offset from viewStart
+    clickOffsetDays: number; // how many days from phase start the user clicked
     barDurationDays: number;
+    barStartDay: number; // original phase startDate offset from viewStart
   } | null>(null);
   const [dragOverDay, setDragOverDay] = useState<number | null>(null);
   const [optimisticDates, setOptimisticDates] = useState<Record<string, { startDate: string; endDate: string }>>({});
   const [saving, setSaving] = useState(false);
   const [dragTooltip, setDragTooltip] = useState<{ newStart: Date; newEnd: Date } | null>(null);
+  const isDraggingRef = useRef(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -163,75 +164,92 @@ export default function TimelinePage() {
     return { left: clampedLeft, width: clampedRight - clampedLeft, rawLeft: left, rawWidth: width };
   };
 
+  // ── Helper: get day offset from a drag event ─────────────────────────────────
+  const getDayOffsetFromEvent = (e: React.DragEvent): number => {
+    const gridEl = gridRef.current;
+    if (!gridEl) return 0;
+    const gridLeft = gridEl.getBoundingClientRect().left;
+    const mouseX = e.clientX - gridLeft;
+    return Math.max(0, Math.min(Math.floor(mouseX / dayWidth), totalDays - 1));
+  };
+
   // ── Tooltip handler ──────────────────────────────────────────────────────────
   const handleBarMouseEnter = (e: React.MouseEvent, phase: Phase, job: Job) => {
+    if (isDraggingRef.current) return;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setTooltip({ phase, job, x: rect.left, y: rect.bottom + 8 });
   };
 
   // ── Drag handlers ────────────────────────────────────────────────────────────
-  const handleDragStart = (
-    e: React.DragEvent,
-    phase: Phase,
-    job: Job,
-    barLeftPx: number
-  ) => {
+  const handleDragStart = (e: React.DragEvent, phase: Phase, job: Job) => {
     if (!phase.startDate || !phase.endDate) return;
+
     const gridEl = gridRef.current;
     const gridLeft = gridEl?.getBoundingClientRect().left ?? 0;
     const mouseXInGrid = e.clientX - gridLeft;
-    const origStartDay = Math.floor(mouseXInGrid / dayWidth);
+    const mouseDay = Math.floor(mouseXInGrid / dayWidth);
+
     const barStartDay = differenceInDays(parseISO(phase.startDate), viewStart);
     const barDurationDays = differenceInDays(parseISO(phase.endDate), parseISO(phase.startDate));
+    // How many days from the bar's start the user clicked
+    const clickOffsetDays = mouseDay - barStartDay;
 
     dragDataRef.current = {
       phaseId: phase.id,
       jobId: job.id,
-      origStartDay,
+      clickOffsetDays,
       barStartDay,
       barDurationDays,
     };
 
+    isDraggingRef.current = true;
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", phase.id);
     setTooltip(null);
   };
 
-  const handleDragOver = (e: React.DragEvent, dayOffset: number) => {
+  // Single grid-level drag over handler — avoids z-index issues with bars
+  const handleGridDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
     if (!dragDataRef.current) return;
-    const { origStartDay, barStartDay, barDurationDays } = dragDataRef.current;
-    const delta = dayOffset - origStartDay;
-    const newStartDay = barStartDay + delta;
-    const newStart = addDays(viewStart, newStartDay);
+
+    const dayOffset = getDayOffsetFromEvent(e);
+    const { clickOffsetDays, barDurationDays } = dragDataRef.current;
+
+    // New bar starts at: (where cursor is) - (where user clicked within bar)
+    const newBarStartDay = dayOffset - clickOffsetDays;
+    const newStart = addDays(viewStart, newBarStartDay);
     const newEnd = addDays(newStart, barDurationDays);
+
     setDragOverDay(dayOffset);
     setDragTooltip({ newStart, newEnd });
   };
 
-  const handleDrop = async (e: React.DragEvent, dayOffset: number) => {
+  const handleGridDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     if (!dragDataRef.current) return;
-    const { phaseId, origStartDay, barStartDay, barDurationDays } = dragDataRef.current;
-    const delta = dayOffset - origStartDay;
-    const newStartDay = barStartDay + delta;
-    const newStart = addDays(viewStart, newStartDay);
+
+    const dayOffset = getDayOffsetFromEvent(e);
+    const { phaseId, clickOffsetDays, barDurationDays } = dragDataRef.current;
+
+    const newBarStartDay = dayOffset - clickOffsetDays;
+    const newStart = addDays(viewStart, newBarStartDay);
     const newEnd = addDays(newStart, barDurationDays);
 
     const newStartStr = format(newStart, "yyyy-MM-dd");
     const newEndStr = format(newEnd, "yyyy-MM-dd");
+
+    dragDataRef.current = null;
+    setDragOverDay(null);
+    setDragTooltip(null);
 
     // Optimistic update
     setOptimisticDates((prev) => ({
       ...prev,
       [phaseId]: { startDate: newStartStr, endDate: newEndStr },
     }));
-    setDragOverDay(null);
-    setDragTooltip(null);
-    dragDataRef.current = null;
 
-    // API call
     setSaving(true);
     try {
       await fetch(`/api/phases/${phaseId}`, {
@@ -252,6 +270,7 @@ export default function TimelinePage() {
 
   const handleDragEnd = () => {
     dragDataRef.current = null;
+    isDraggingRef.current = false;
     setDragOverDay(null);
     setDragTooltip(null);
   };
@@ -280,7 +299,7 @@ export default function TimelinePage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
             <h1 className="text-xl font-bold text-gray-900">People Timeline</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Jobs as rows · phases colored by assigned person</p>
+            <p className="text-sm text-gray-500 mt-0.5">Jobs as rows · phases colored by assigned person · drag to reschedule</p>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -413,35 +432,47 @@ export default function TimelinePage() {
                     })}
                   </div>
 
-                  {/* Grid body */}
+                  {/* Grid body — single drop target for the whole area */}
                   <div
                     ref={gridRef}
                     className="relative"
                     style={{ height: ROW_HEIGHT * jobsWithPhases.length, width: Math.max(timelineWidth, 100) }}
+                    onDragOver={handleGridDragOver}
+                    onDrop={handleGridDrop}
+                    onDragLeave={(e) => {
+                      // Only clear if leaving the grid entirely
+                      if (!gridRef.current?.contains(e.relatedTarget as Node)) {
+                        setDragOverDay(null);
+                        setDragTooltip(null);
+                      }
+                    }}
                   >
                     {/* Weekend shading */}
                     {days.map((day, i) =>
                       isWeekend(day) ? (
-                        <div key={i} className="absolute top-0 bottom-0 bg-gray-50/60" style={{ left: i * dayWidth, width: dayWidth }} />
+                        <div key={i} className="absolute top-0 bottom-0 bg-gray-50/60 pointer-events-none" style={{ left: i * dayWidth, width: dayWidth }} />
                       ) : null
                     )}
 
-                    {/* Day drop targets overlay */}
-                    {days.map((day, i) => (
-                      <div
-                        key={`drop-${i}`}
-                        className={`absolute top-0 bottom-0 ${dragOverDay === i ? "bg-blue-100/40" : ""}`}
-                        style={{ left: i * dayWidth, width: dayWidth, zIndex: 5 }}
-                        onDragOver={(e) => handleDragOver(e, i)}
-                        onDrop={(e) => handleDrop(e, i)}
-                      />
-                    ))}
+                    {/* Drag-over column highlight */}
+                    {dragOverDay !== null && dragDataRef.current && (() => {
+                      const { clickOffsetDays, barDurationDays } = dragDataRef.current;
+                      const newBarStartDay = dragOverDay - clickOffsetDays;
+                      const highlightLeft = newBarStartDay * dayWidth;
+                      const highlightWidth = (barDurationDays + 1) * dayWidth;
+                      return (
+                        <div
+                          className="absolute top-0 bottom-0 bg-blue-100/50 border-l-2 border-blue-400 pointer-events-none"
+                          style={{ left: highlightLeft, width: highlightWidth, zIndex: 4 }}
+                        />
+                      );
+                    })()}
 
                     {/* Today line */}
                     {showToday && (
                       <div
-                        className="absolute top-0 bottom-0 w-px bg-blue-400/60 z-10"
-                        style={{ left: todayOffset * dayWidth }}
+                        className="absolute top-0 bottom-0 w-px bg-blue-400/60 pointer-events-none"
+                        style={{ left: todayOffset * dayWidth, zIndex: 6 }}
                       />
                     )}
 
@@ -455,7 +486,7 @@ export default function TimelinePage() {
                       return (
                         <div key={job.id}>
                           <div
-                            className="absolute left-0 right-0 border-b border-gray-100"
+                            className="absolute left-0 right-0 border-b border-gray-100 pointer-events-none"
                             style={{ top: rowTop, height: ROW_HEIGHT, backgroundColor: job.color + "08" }}
                           />
 
@@ -468,15 +499,14 @@ export default function TimelinePage() {
                             const primaryWorker = workers[0] ?? null;
                             const barColor = primaryWorker ? getUserColor(primaryWorker.id, allWorkers) : "#cbd5e1";
                             const extraWorkers = workers.slice(1);
-                            const isDragging = dragDataRef.current?.phaseId === phase.id;
 
                             return (
                               <div
                                 key={phase.id}
                                 draggable={!!(phase.startDate && phase.endDate)}
-                                onDragStart={(e) => handleDragStart(e, phase, job, bar.left)}
+                                onDragStart={(e) => handleDragStart(e, phase, job)}
                                 onDragEnd={handleDragEnd}
-                                className={`absolute rounded text-white text-xs font-medium shadow-sm overflow-hidden flex items-center gap-1 px-1.5 cursor-grab active:cursor-grabbing group select-none ${isDragging ? "opacity-50" : "hover:opacity-90"} transition-opacity`}
+                                className="absolute rounded text-white text-xs font-medium shadow-sm overflow-hidden flex items-center gap-1 px-1.5 cursor-grab active:cursor-grabbing group select-none hover:opacity-90 transition-opacity"
                                 style={{
                                   top: barTop,
                                   left: bar.left,
@@ -485,13 +515,11 @@ export default function TimelinePage() {
                                   backgroundColor: barColor,
                                   zIndex: 8,
                                 }}
-                                onMouseEnter={(e) => {
-                                  if (!dragDataRef.current) handleBarMouseEnter(e, phase, job);
-                                }}
+                                onMouseEnter={(e) => handleBarMouseEnter(e, phase, job)}
                                 onMouseLeave={() => setTooltip(null)}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleBarMouseEnter(e, phase, job);
+                                  if (!isDraggingRef.current) handleBarMouseEnter(e, phase, job);
                                 }}
                               >
                                 {bar.width > 50 && (

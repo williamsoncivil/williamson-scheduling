@@ -46,7 +46,7 @@ export default function SchedulePage() {
 
   // Drag state for entries
   const dragEntryRef = useRef<{ entryId: string } | null>(null);
-  const [dragOverDate, setDragOverDate] = useState<string | null>(null);
+  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
   const [optimisticDates, setOptimisticDates] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
@@ -98,10 +98,11 @@ export default function SchedulePage() {
     e.dataTransfer.setData("text/plain", entry.id);
   };
 
-  const handleDayDragOver = (e: React.DragEvent, dateStr: string) => {
+  // key = dateStr for people view, or `${jobId}:${dateStr}` for jobs view
+  const handleDayDragOver = (e: React.DragEvent, key: string) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
-    setDragOverDate(dateStr);
+    setDragOverKey(key);
   };
 
   const handleDayDrop = async (e: React.DragEvent, dateStr: string) => {
@@ -109,7 +110,7 @@ export default function SchedulePage() {
     if (!dragEntryRef.current) return;
     const { entryId } = dragEntryRef.current;
     dragEntryRef.current = null;
-    setDragOverDate(null);
+    setDragOverKey(null);
 
     // Find the entry to check if date actually changed
     const entry = entries.find((en) => en.id === entryId);
@@ -143,7 +144,13 @@ export default function SchedulePage() {
     }
   };
 
-  const handleDayDragLeave = () => setDragOverDate(null);
+  const handleDayDragLeave = (e: React.DragEvent) => {
+    // Only clear if leaving the cell entirely (not moving over a child element)
+    const cell = e.currentTarget as HTMLElement;
+    if (!cell.contains(e.relatedTarget as Node)) {
+      setDragOverKey(null);
+    }
+  };
 
   // ── By Jobs grouping ───────────────────────────────────────────────────────
   const getJobRows = () => {
@@ -180,7 +187,7 @@ export default function SchedulePage() {
   const renderDayCell = (day: Date, entryList: ScheduleEntry[], mode: GroupBy) => {
     const dateStr = format(day, "yyyy-MM-dd");
     const isToday = isSameDay(day, new Date());
-    const isDragOver = dragOverDate === dateStr;
+    const isDragOver = dragOverKey === dateStr;
 
     return (
       <div
@@ -329,7 +336,7 @@ export default function SchedulePage() {
                         const dateStr = format(day, "yyyy-MM-dd");
                         const dayEntries = getEntriesForJobAndDay(job.id, day);
                         const isToday = isSameDay(day, new Date());
-                        const isDragOver = dragOverDate === `${job.id}:${dateStr}`;
+                        const isDragOver = dragOverKey === dateStr;
                         return (
                           <div
                             key={day.toISOString()}
@@ -382,7 +389,7 @@ export default function SchedulePage() {
                     const dayEntries = getEntriesForDay(day);
                     const inMonth = day.getMonth() === currentDate.getMonth();
                     const isToday = isSameDay(day, new Date());
-                    const isDragOver = dragOverDate === dateStr;
+                    const isDragOver = dragOverKey === dateStr;
                     return (
                       <div
                         key={day.toISOString()}
