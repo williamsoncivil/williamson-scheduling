@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Layout from "@/components/Layout";
 import Link from "next/link";
 import {
@@ -33,6 +33,8 @@ interface User {
   name: string;
 }
 
+type GroupBy = "people" | "jobs";
+
 export default function SchedulePage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [entries, setEntries] = useState<ScheduleEntry[]>([]);
@@ -40,6 +42,13 @@ export default function SchedulePage() {
   const [filterUserId, setFilterUserId] = useState("");
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<"week" | "month">("week");
+  const [groupBy, setGroupBy] = useState<GroupBy>("people");
+
+  // Drag state for entries
+  const dragEntryRef = useRef<{ entryId: string } | null>(null);
+  const [dragOverDate, setDragOverDate] = useState<string | null>(null);
+  const [optimisticDates, setOptimisticDates] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
 
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 });
   const weekEnd = endOfWeek(currentDate, { weekStartsOn: 0 });
@@ -63,8 +72,13 @@ export default function SchedulePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentDate, filterUserId]);
 
-  const getEntriesForDay = (day: Date) =>
-    entries.filter((e) => isSameDay(parseISO(e.date), day));
+  const getEntriesForDay = (day: Date, entryList?: ScheduleEntry[]) => {
+    const list = entryList ?? entries;
+    return list.filter((e) => {
+      const dateStr = optimisticDates[e.id] ?? e.date;
+      return isSameDay(parseISO(dateStr), day);
+    });
+  };
 
   const prevPeriod = () => setCurrentDate(subWeeks(currentDate, 1));
   const nextPeriod = () => setCurrentDate(addWeeks(currentDate, 1));
@@ -77,20 +91,125 @@ export default function SchedulePage() {
     { weekStartsOn: 0 }
   );
 
+  // ── Drag handlers ──────────────────────────────────────────────────────────
+  const handleEntryDragStart = (e: React.DragEvent, entry: ScheduleEntry) => {
+    dragEntryRef.current = { entryId: entry.id };
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", entry.id);
+  };
+
+  const handleDayDragOver = (e: React.DragEvent, dateStr: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setDragOverDate(dateStr);
+  };
+
+  const handleDayDrop = async (e: React.DragEvent, dateStr: string) => {
+    e.preventDefault();
+    if (!dragEntryRef.current) return;
+    const { entryId } = dragEntryRef.current;
+    dragEntryRef.current = null;
+    setDragOverDate(null);
+
+    // Find the entry to check if date actually changed
+    const entry = entries.find((en) => en.id === entryId);
+    const currentDateStr = (optimisticDates[entryId] ?? entry?.date ?? "").split("T")[0];
+    if (currentDateStr === dateStr) return;
+
+    // Optimistic update
+    setOptimisticDates((prev) => ({ ...prev, [entryId]: dateStr }));
+
+    setSaving(true);
+    try {
+      await fetch(`/api/schedule/${entryId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ date: dateStr }),
+      });
+      // Refetch
+      const weekStr = format(weekStart, "yyyy-MM-dd");
+      const url = filterUserId
+        ? `/api/schedule?week=${weekStr}&userId=${filterUserId}`
+        : `/api/schedule?week=${weekStr}`;
+      const d = await fetch(url).then((r) => r.json());
+      setEntries(d);
+    } finally {
+      setSaving(false);
+      setOptimisticDates((prev) => {
+        const next = { ...prev };
+        delete next[entryId];
+        return next;
+      });
+    }
+  };
+
+  const handleDayDragLeave = () => setDragOverDate(null);
+
+  // ── By Jobs grouping ───────────────────────────────────────────────────────
+  const getJobRows = () => {
+    const jobMap = new Map<string, { id: string; name: string; color: string }>();
+    entries.forEach((e) => {
+      if (!jobMap.has(e.job.id)) jobMap.set(e.job.id, e.job);
+    });
+    return Array.from(jobMap.values());
+  };
+
+  const getEntriesForJobAndDay = (jobId: string, day: Date) =>
+    entries.filter((e) => {
+      const dateStr = optimisticDates[e.id] ?? e.date;
+      return e.job.id === jobId && isSameDay(parseISO(dateStr), day);
+    });
+
+  // ── Render entry card ───────────────────────────────────────────────────────
+  const renderEntry = (entry: ScheduleEntry, mode: GroupBy) => (
+    <div
+      key={entry.id}
+      draggable
+      onDragStart={(e) => handleEntryDragStart(e, entry)}
+      className="mb-1.5 p-2 rounded-lg text-white text-xs cursor-grab active:cursor-grabbing hover:opacity-90 transition-opacity select-none"
+      style={{ backgroundColor: entry.job.color }}
+    >
+      <p className="font-semibold truncate">
+        {mode === "people" ? entry.job.name : entry.user.name.split(" ")[0]}
+      </p>
+      {entry.phase && <p className="opacity-80 truncate">{entry.phase.name}</p>}
+      <p className="opacity-70">{entry.startTime}–{entry.endTime}</p>
+    </div>
+  );
+
+  const renderDayCell = (day: Date, entryList: ScheduleEntry[], mode: GroupBy) => {
+    const dateStr = format(day, "yyyy-MM-dd");
+    const isToday = isSameDay(day, new Date());
+    const isDragOver = dragOverDate === dateStr;
+
+    return (
+      <div
+        key={day.toISOString()}
+        className={`p-2 border-r last:border-r-0 border-gray-100 min-h-24 transition-colors ${isToday ? "bg-blue-50/50" : ""} ${isDragOver ? "bg-green-50 ring-2 ring-inset ring-green-300" : ""}`}
+        onDragOver={(e) => handleDayDragOver(e, dateStr)}
+        onDrop={(e) => handleDayDrop(e, dateStr)}
+        onDragLeave={handleDayDragLeave}
+      >
+        {entryList.map((entry) => renderEntry(entry, mode))}
+      </div>
+    );
+  };
+
   return (
     <Layout>
       <div className="p-6 max-w-6xl mx-auto">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Schedule</h1>
             <p className="text-gray-500 text-sm mt-0.5">
               {viewMode === "week"
                 ? `${format(weekStart, "MMM d")} – ${format(weekEnd, "MMM d, yyyy")}`
                 : format(currentDate, "MMMM yyyy")}
+              {saving && <span className="ml-2 text-blue-500 animate-pulse">Saving…</span>}
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
             {/* Gantt View link */}
             <Link
               href="/schedule/gantt"
@@ -99,7 +218,23 @@ export default function SchedulePage() {
               📊 Gantt View
             </Link>
 
-            {/* View toggle */}
+            {/* Group by toggle */}
+            <div className="flex bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setGroupBy("people")}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${groupBy === "people" ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}
+              >
+                By People
+              </button>
+              <button
+                onClick={() => setGroupBy("jobs")}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${groupBy === "jobs" ? "bg-white shadow-sm text-gray-900" : "text-gray-500 hover:text-gray-700"}`}
+              >
+                By Jobs
+              </button>
+            </div>
+
+            {/* View mode toggle */}
             <div className="flex bg-gray-100 rounded-lg p-1">
               <button
                 onClick={() => setViewMode("week")}
@@ -116,15 +251,9 @@ export default function SchedulePage() {
             </div>
 
             {/* Navigation */}
-            <button onClick={prevPeriod} className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600">
-              ←
-            </button>
-            <button onClick={() => setCurrentDate(new Date())} className="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 text-gray-600">
-              Today
-            </button>
-            <button onClick={nextPeriod} className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600">
-              →
-            </button>
+            <button onClick={prevPeriod} className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600">←</button>
+            <button onClick={() => setCurrentDate(new Date())} className="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 text-gray-600">Today</button>
+            <button onClick={nextPeriod} className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 text-gray-600">→</button>
           </div>
         </div>
 
@@ -145,45 +274,94 @@ export default function SchedulePage() {
         {loading ? (
           <div className="text-gray-400 text-center py-12">Loading...</div>
         ) : viewMode === "week" ? (
-          /* Weekly View */
-          <div className="bg-white rounded-xl shadow-sm overflow-hidden">
-            <div className="grid grid-cols-7 border-b border-gray-100">
-              {days.map((day) => (
-                <div key={day.toISOString()} className="p-3 text-center border-r last:border-r-0 border-gray-100">
-                  <p className="text-xs font-medium text-gray-400 uppercase">{format(day, "EEE")}</p>
-                  <p className={`text-lg font-semibold mt-0.5 ${
-                    isSameDay(day, new Date()) ? "text-blue-600" : "text-gray-700"
-                  }`}>
-                    {format(day, "d")}
-                  </p>
-                </div>
-              ))}
+          /* ── Week View ────────────────────────────────────────────────────── */
+          groupBy === "people" ? (
+            /* By People: traditional day-column calendar */
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+              <div className="grid grid-cols-7 border-b border-gray-100">
+                {days.map((day) => (
+                  <div key={day.toISOString()} className="p-3 text-center border-r last:border-r-0 border-gray-100">
+                    <p className="text-xs font-medium text-gray-400 uppercase">{format(day, "EEE")}</p>
+                    <p className={`text-lg font-semibold mt-0.5 ${isSameDay(day, new Date()) ? "text-blue-600" : "text-gray-700"}`}>
+                      {format(day, "d")}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-7 min-h-64">
+                {days.map((day) => renderDayCell(day, getEntriesForDay(day), "people"))}
+              </div>
             </div>
-            <div className="grid grid-cols-7 min-h-64">
-              {days.map((day) => {
-                const dayEntries = getEntriesForDay(day);
-                const isToday = isSameDay(day, new Date());
-                return (
-                  <div key={day.toISOString()} className={`p-2 border-r last:border-r-0 border-gray-100 min-h-32 ${isToday ? "bg-blue-50/50" : ""}`}>
-                    {dayEntries.map((entry) => (
-                      <Link key={entry.id} href={`/jobs/${entry.job.id}`}>
-                        <div
-                          className="mb-1.5 p-2 rounded-lg text-white text-xs cursor-pointer hover:opacity-90 transition-opacity"
-                          style={{ backgroundColor: entry.job.color }}
-                        >
-                          <p className="font-semibold truncate">{entry.job.name}</p>
-                          <p className="opacity-80 truncate">{entry.user.name}</p>
-                          <p className="opacity-70">{entry.startTime}–{entry.endTime}</p>
-                        </div>
-                      </Link>
+          ) : (
+            /* By Jobs: rows = jobs, columns = days */
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+              {getJobRows().length === 0 ? (
+                <div className="p-8 text-center text-gray-400">No schedule entries this week</div>
+              ) : (
+                <>
+                  {/* Header row */}
+                  <div className="flex border-b border-gray-100">
+                    <div className="w-40 shrink-0 px-3 py-3 border-r border-gray-100">
+                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Job</span>
+                    </div>
+                    {days.map((day) => (
+                      <div key={day.toISOString()} className="flex-1 p-3 text-center border-r last:border-r-0 border-gray-100">
+                        <p className="text-xs font-medium text-gray-400 uppercase">{format(day, "EEE")}</p>
+                        <p className={`text-lg font-semibold mt-0.5 ${isSameDay(day, new Date()) ? "text-blue-600" : "text-gray-700"}`}>
+                          {format(day, "d")}
+                        </p>
+                      </div>
                     ))}
                   </div>
-                );
-              })}
+
+                  {/* Job rows */}
+                  {getJobRows().map((job) => (
+                    <div key={job.id} className="flex border-b last:border-b-0 border-gray-100" style={{ minHeight: 80 }}>
+                      {/* Job name column */}
+                      <div className="w-40 shrink-0 px-3 py-2 border-r border-gray-100 flex items-start gap-2 pt-3">
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5" style={{ backgroundColor: job.color }} />
+                        <Link href={`/jobs/${job.id}`} className="text-xs font-semibold text-gray-800 hover:underline leading-tight">
+                          {job.name}
+                        </Link>
+                      </div>
+                      {/* Day cells */}
+                      {days.map((day) => {
+                        const dateStr = format(day, "yyyy-MM-dd");
+                        const dayEntries = getEntriesForJobAndDay(job.id, day);
+                        const isToday = isSameDay(day, new Date());
+                        const isDragOver = dragOverDate === `${job.id}:${dateStr}`;
+                        return (
+                          <div
+                            key={day.toISOString()}
+                            className={`flex-1 p-2 border-r last:border-r-0 border-gray-100 transition-colors ${isToday ? "bg-blue-50/50" : ""} ${isDragOver ? "bg-green-50 ring-2 ring-inset ring-green-300" : ""}`}
+                            onDragOver={(e) => handleDayDragOver(e, dateStr)}
+                            onDrop={(e) => handleDayDrop(e, dateStr)}
+                            onDragLeave={handleDayDragLeave}
+                          >
+                            {dayEntries.map((entry) => (
+                              <div
+                                key={entry.id}
+                                draggable
+                                onDragStart={(e) => handleEntryDragStart(e, entry)}
+                                className="mb-1.5 p-1.5 rounded-lg text-white text-xs cursor-grab active:cursor-grabbing hover:opacity-90 transition-opacity select-none"
+                                style={{ backgroundColor: job.color }}
+                              >
+                                <p className="font-semibold truncate">{entry.user.name.split(" ")[0]}</p>
+                                {entry.phase && <p className="opacity-80 truncate text-[10px]">{entry.phase.name}</p>}
+                                <p className="opacity-70 text-[10px]">{entry.startTime}–{entry.endTime}</p>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
-          </div>
+          )
         ) : (
-          /* Month View */
+          /* ── Month View ───────────────────────────────────────────────────── */
           <div className="bg-white rounded-xl shadow-sm overflow-hidden">
             <div className="grid grid-cols-7 border-b border-gray-100">
               {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
@@ -192,31 +370,42 @@ export default function SchedulePage() {
                 </div>
               ))}
             </div>
-            {weeksInMonth.map((weekStart) => {
+            {weeksInMonth.map((ws) => {
               const weekDays = eachDayOfInterval({
-                start: weekStart,
-                end: endOfWeek(weekStart, { weekStartsOn: 0 }),
+                start: ws,
+                end: endOfWeek(ws, { weekStartsOn: 0 }),
               });
               return (
-                <div key={weekStart.toISOString()} className="grid grid-cols-7 border-b last:border-b-0 border-gray-100">
+                <div key={ws.toISOString()} className="grid grid-cols-7 border-b last:border-b-0 border-gray-100">
                   {weekDays.map((day) => {
+                    const dateStr = format(day, "yyyy-MM-dd");
                     const dayEntries = getEntriesForDay(day);
                     const inMonth = day.getMonth() === currentDate.getMonth();
                     const isToday = isSameDay(day, new Date());
+                    const isDragOver = dragOverDate === dateStr;
                     return (
-                      <div key={day.toISOString()} className={`p-2 border-r last:border-r-0 border-gray-100 min-h-24 ${!inMonth ? "bg-gray-50" : ""} ${isToday ? "bg-blue-50/50" : ""}`}>
+                      <div
+                        key={day.toISOString()}
+                        className={`p-2 border-r last:border-r-0 border-gray-100 min-h-24 transition-colors ${!inMonth ? "bg-gray-50" : ""} ${isToday ? "bg-blue-50/50" : ""} ${isDragOver ? "bg-green-50 ring-2 ring-inset ring-green-300" : ""}`}
+                        onDragOver={(e) => handleDayDragOver(e, dateStr)}
+                        onDrop={(e) => handleDayDrop(e, dateStr)}
+                        onDragLeave={handleDayDragLeave}
+                      >
                         <p className={`text-xs font-medium mb-1 ${!inMonth ? "text-gray-300" : isToday ? "text-blue-600 font-bold" : "text-gray-600"}`}>
                           {format(day, "d")}
                         </p>
                         {dayEntries.slice(0, 3).map((entry) => (
-                          <Link key={entry.id} href={`/jobs/${entry.job.id}`}>
-                            <div
-                              className="mb-0.5 px-1.5 py-0.5 rounded text-white text-xs truncate cursor-pointer hover:opacity-90"
-                              style={{ backgroundColor: entry.job.color }}
-                            >
-                              {entry.user.name.split(" ")[0]} · {entry.job.name}
-                            </div>
-                          </Link>
+                          <div
+                            key={entry.id}
+                            draggable
+                            onDragStart={(ev) => handleEntryDragStart(ev, entry)}
+                            className="mb-0.5 px-1.5 py-0.5 rounded text-white text-xs truncate cursor-grab active:cursor-grabbing hover:opacity-90 select-none"
+                            style={{ backgroundColor: entry.job.color }}
+                          >
+                            {groupBy === "people"
+                              ? `${entry.user.name.split(" ")[0]} · ${entry.job.name}`
+                              : `${entry.job.name} · ${entry.user.name.split(" ")[0]}`}
+                          </div>
                         ))}
                         {dayEntries.length > 3 && (
                           <p className="text-xs text-gray-400">+{dayEntries.length - 3} more</p>

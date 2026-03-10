@@ -133,6 +133,8 @@ export default function JobDetailPage() {
   const [loading, setLoading] = useState(true);
   const [copyModal, setCopyModal] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   // Overview editing
   const [editing, setEditing] = useState(false);
@@ -292,6 +294,18 @@ export default function JobDetailPage() {
     });
     setArchiving(false);
     fetchJob();
+  };
+
+  const deleteJob = async () => {
+    setDeleting(true);
+    const res = await fetch(`/api/jobs/${jobId}`, { method: "DELETE" });
+    if (res.ok) {
+      window.location.href = "/jobs";
+    } else {
+      setDeleting(false);
+      setDeleteConfirm(false);
+      alert("Failed to delete job.");
+    }
   };
 
   const addPhase = async (e: React.FormEvent) => {
@@ -756,6 +770,14 @@ export default function JobDetailPage() {
                         className="text-sm text-green-600 hover:text-green-800 border border-green-300 px-3 py-1 rounded-lg hover:bg-green-50 disabled:opacity-50"
                       >
                         {archiving ? "Restoring…" : "Restore Job"}
+                      </button>
+                    )}
+                    {session?.user?.role === "ADMIN" && (
+                      <button
+                        onClick={() => setDeleteConfirm(true)}
+                        className="text-sm text-red-600 hover:text-red-800 border border-red-300 px-3 py-1 rounded-lg hover:bg-red-50"
+                      >
+                        Delete Job
                       </button>
                     )}
                     <button
@@ -1434,6 +1456,44 @@ export default function JobDetailPage() {
         sourceJobName={job.name}
         onClose={() => setCopyModal(false)}
       />
+
+      {/* Delete Job Confirmation Modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center text-red-600 text-xl shrink-0">
+                🗑️
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">Delete Job Permanently</h3>
+            </div>
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-5">
+              <p className="text-sm text-red-800 font-medium">
+                This will permanently delete <strong>{job.name}</strong> and all its phases, schedule entries, and dependencies. This cannot be undone.
+              </p>
+            </div>
+            <p className="text-sm text-gray-600 mb-5">
+              Are you absolutely sure you want to delete this job?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setDeleteConfirm(false)}
+                disabled={deleting}
+                className="flex-1 border border-gray-300 text-gray-700 py-2.5 px-4 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={deleteJob}
+                disabled={deleting}
+                className="flex-1 bg-red-600 text-white py-2.5 px-4 rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50"
+              >
+                {deleting ? "Deleting…" : "Yes, Delete Forever"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Cascade Toast */}
       {cascadeToast && (

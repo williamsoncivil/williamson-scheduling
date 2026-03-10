@@ -58,6 +58,26 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  // Explicitly delete in order: PhaseDependency → ScheduleEntry → Phase → Job
+  const phases = await prisma.phase.findMany({
+    where: { jobId: params.id },
+    select: { id: true },
+  });
+  const phaseIds = phases.map((p) => p.id);
+
+  if (phaseIds.length > 0) {
+    await prisma.phaseDependency.deleteMany({
+      where: {
+        OR: [
+          { predecessorId: { in: phaseIds } },
+          { successorId: { in: phaseIds } },
+        ],
+      },
+    });
+  }
+
+  await prisma.scheduleEntry.deleteMany({ where: { jobId: params.id } });
+  await prisma.phase.deleteMany({ where: { jobId: params.id } });
   await prisma.job.delete({ where: { id: params.id } });
 
   return NextResponse.json({ success: true });
