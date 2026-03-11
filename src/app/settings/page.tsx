@@ -37,6 +37,14 @@ export default function SettingsPage() {
   const [createError, setCreateError] = useState("");
   const [createSuccess, setCreateSuccess] = useState(false);
 
+  // Subcontractor form
+  const [subName, setSubName] = useState("");
+  const [subTrade, setSubTrade] = useState("");
+  const [subPhone, setSubPhone] = useState("");
+  const [creatingSub, setCreatingSub] = useState(false);
+  const [subError, setSubError] = useState("");
+  const [subSuccess, setSubSuccess] = useState(false);
+
   const fetchUsers = async () => {
     const res = await fetch("/api/people");
     const data = await res.json();
@@ -77,6 +85,32 @@ export default function SettingsPage() {
     });
     setEditingId(null);
     fetchUsers();
+  };
+
+  const createSubcontractor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreatingSub(true);
+    setSubError("");
+    setSubSuccess(false);
+    try {
+      const res = await fetch("/api/people", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: subName, trade: subTrade || null, phone: subPhone || null, role: "SUBCONTRACTOR" }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to add subcontractor");
+      }
+      setSubName(""); setSubTrade(""); setSubPhone("");
+      setSubSuccess(true);
+      setTimeout(() => setSubSuccess(false), 3000);
+      fetchUsers();
+    } catch (err) {
+      setSubError(err instanceof Error ? err.message : "Failed to add subcontractor");
+    } finally {
+      setCreatingSub(false);
+    }
   };
 
   const createUser = async (e: React.FormEvent) => {
@@ -243,6 +277,35 @@ export default function SettingsPage() {
             </div>
           )}
         </div>
+
+        {/* Add Subcontractor */}
+        {isAdmin && (
+          <div className="bg-white rounded-xl shadow-sm p-6 mb-6 border-l-4 border-orange-400">
+            <h2 className="font-semibold text-gray-900 mb-1">Add Subcontractor</h2>
+            <p className="text-sm text-gray-500 mb-4">No login required — subcontractors appear in scheduling but can't access the app.</p>
+            {subSuccess && <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">✓ Subcontractor added</div>}
+            {subError && <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{subError}</div>}
+            <form onSubmit={createSubcontractor} className="grid gap-4 sm:grid-cols-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                <input type="text" value={subName} onChange={(e) => setSubName(e.target.value)} required placeholder="John Smith" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Trade / Company <span className="text-gray-400">(optional)</span></label>
+                <input type="text" value={subTrade} onChange={(e) => setSubTrade(e.target.value)} placeholder="Framing, Electrical…" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone <span className="text-gray-400">(optional)</span></label>
+                <input type="tel" value={subPhone} onChange={(e) => setSubPhone(e.target.value)} placeholder="360-555-0100" className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400" />
+              </div>
+              <div className="sm:col-span-3">
+                <button type="submit" disabled={creatingSub} className="bg-orange-500 text-white py-2 px-6 rounded-lg text-sm font-medium hover:bg-orange-600 transition-colors disabled:opacity-50">
+                  {creatingSub ? "Adding..." : "Add Subcontractor"}
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
 
         {/* Add new user */}
         {isAdmin && (

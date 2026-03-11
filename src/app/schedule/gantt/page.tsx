@@ -697,6 +697,13 @@ export default function MasterGanttPage() {
                           key={phase.id}
                           onMouseDown={(e) => handleBarMouseDown(e, phase, barTop, bar.color)}
                           onClick={(e) => handleBarClick(e, phase, job.name)}
+                          onMouseEnter={(e) => {
+                            if (!isDraggingRef.current) {
+                              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                              setPopover({ phase, jobName: job.name, x: rect.left, y: rect.bottom + 8 });
+                            }
+                          }}
+                          onMouseLeave={() => { if (!isDraggingRef.current) setPopover(null); }}
                           className={`absolute rounded flex items-center px-1.5 text-white text-xs font-medium shadow-sm overflow-hidden select-none transition-opacity ${
                             isBeingDragged
                               ? "opacity-40 cursor-grabbing"
@@ -759,10 +766,10 @@ export default function MasterGanttPage() {
         </div>
       )}
 
-      {/* Popover */}
+      {/* Hover Tooltip */}
       {popover && (
         <div
-          className="fixed z-50 bg-white rounded-xl shadow-xl border border-gray-200 p-4 w-64"
+          className="fixed z-50 bg-white rounded-xl shadow-xl border border-gray-200 p-4 w-64 pointer-events-none"
           style={{
             top: Math.min(popover.y, window.innerHeight - 220),
             left: Math.min(popover.x, window.innerWidth - 280),
