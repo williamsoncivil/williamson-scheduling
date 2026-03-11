@@ -121,8 +121,8 @@ const FILTERS = encodeURIComponent(JSON.stringify({
   "12": JSON.stringify({ SelectedValue: 2147483647, StartDate: null, EndDate: null }),
 }));
 
-async function getFileList(folderId = -23000, associatedTypeId = 23, directoryType = 2) {
-  const url = `/api/MediaFolders/GetDirectoryDetails?mediaType=1&folderId=${folderId}&associatedTypeId=${associatedTypeId}&directoryType=${directoryType}&jobId=${JOB_ID}&filters=${FILTERS}`;
+async function getFileList(mediaType = 1, folderId = -23000, associatedTypeId = 23, directoryType = 2) {
+  const url = `/api/MediaFolders/GetDirectoryDetails?mediaType=${mediaType}&folderId=${folderId}&associatedTypeId=${associatedTypeId}&directoryType=${directoryType}&jobId=${JOB_ID}&filters=${FILTERS}`;
   const result = await evaluate(`
     (async () => {
       const res = await fetch('${url}', { credentials: 'include', headers: { Accept: 'application/json' } });
@@ -165,10 +165,17 @@ async function main() {
   await send('Page.navigate', { url: `https://buildertrend.net/app/Documents/AttachedFiles/-23000` });
   await new Promise(r => setTimeout(r, 5000));
 
-  // Fetch file list
-  console.log('Fetching file list...');
-  const files = await getFileList();
-  console.log(`Found ${files.length} files\n`);
+  // Fetch documents (mediaType=1) and photos (mediaType=2)
+  console.log('Fetching documents...');
+  const docs = await getFileList(1, -23000, 23, 2);       // Schedule-attached PDFs/docs
+  console.log(`Found ${docs.length} documents`);
+
+  console.log('Fetching photos...');
+  const photos = await getFileList(2, -23000, 23, 2);     // Schedule-attached photos
+  console.log(`Found ${photos.length} photos`);
+
+  const files = [...docs, ...photos];
+  console.log(`Total: ${files.length} files\n`);
 
   if (files.length === 0) {
     console.log('No files found. Check job ID and that the browser is logged in.');
