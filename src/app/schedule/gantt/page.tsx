@@ -97,8 +97,15 @@ export default function MasterGanttPage() {
   const todayOffset = differenceInDays(new Date(), viewStart);
   const todayPx = todayOffset * DAY_WIDTH;
 
-  // Stable ref for viewStart (it's fixed at mount, doesn't change)
+  // Stable refs for values used inside window event handlers
   const viewStartRef = useRef(viewStart);
+  const totalDaysRef = useRef(totalDays);
+
+  // Keep stable refs in sync after every render
+  useEffect(() => {
+    viewStartRef.current = viewStart;
+    totalDaysRef.current = totalDays;
+  });
 
   const fetchData = useCallback(() => {
     fetch("/api/jobs")
@@ -133,20 +140,24 @@ export default function MasterGanttPage() {
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       const drag = dragDataRef.current;
-      if (!drag) return;
+      if (!drag || !scrollRef.current) return;
 
       const dw = dayWidthRef.current;
       const vs = viewStartRef.current;
+      const td = totalDaysRef.current;
 
-      const deltaX = e.clientX - drag.startMouseX;
-      const deltaDays = Math.round(deltaX / dw);
+      // Re-fetch rect on every mousemove so scroll changes are always current
+      const containerRect = scrollRef.current.getBoundingClientRect();
+      const scrollLeft = scrollRef.current.scrollLeft;
+      // scrollRef includes the sidebar, so subtract SIDEBAR_WIDTH from the offset
+      const relativeX = e.clientX - containerRect.left + scrollLeft - SIDEBAR_WIDTH;
+      const dayIndex = Math.max(0, Math.min(Math.floor(relativeX / dw), td - 1));
 
-      const newStart = addDays(parseISO(drag.startDate), deltaDays);
-      const newEnd = addDays(parseISO(drag.endDate), deltaDays);
+      const newStart = addDays(vs, dayIndex);
+      const newEnd = addDays(newStart, drag.durationDays);
 
-      const newStartDayOffset = differenceInDays(newStart, vs);
       setDragGhost({
-        left: newStartDayOffset * dw,
+        left: dayIndex * dw,
         width: (drag.durationDays + 1) * dw,
         top: drag.barTop,
         color: drag.barColor,
@@ -169,15 +180,24 @@ export default function MasterGanttPage() {
 
       // Ignore tiny moves (click vs drag threshold)
       if (Math.abs(deltaX) < 5) return;
+      if (!scrollRef.current) return;
 
       const dw = dayWidthRef.current;
-      const deltaDays = Math.round(deltaX / dw);
-      if (deltaDays === 0) return;
+      const vs = viewStartRef.current;
+      const td = totalDaysRef.current;
 
-      const newStart = addDays(parseISO(drag.startDate), deltaDays);
-      const newEnd = addDays(parseISO(drag.endDate), deltaDays);
+      const containerRect = scrollRef.current.getBoundingClientRect();
+      const scrollLeft = scrollRef.current.scrollLeft;
+      const relativeX = e.clientX - containerRect.left + scrollLeft - SIDEBAR_WIDTH;
+      const dayIndex = Math.max(0, Math.min(Math.floor(relativeX / dw), td - 1));
+
+      const newStart = addDays(vs, dayIndex);
+      const newEnd = addDays(newStart, drag.durationDays);
       const newStartStr = format(newStart, "yyyy-MM-dd");
       const newEndStr = format(newEnd, "yyyy-MM-dd");
+
+      // Don't make the API call if the date hasn't actually changed
+      if (newStartStr === drag.startDate && newEndStr === drag.endDate) return;
 
       // Optimistic update
       setOptimisticDates((prev) => ({
