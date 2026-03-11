@@ -29,8 +29,11 @@ export default function Sidebar() {
 
   const toggle = () => {
     setCollapsed((prev) => {
-      localStorage.setItem("sidebar-collapsed", String(!prev));
-      return !prev;
+      const next = !prev;
+      localStorage.setItem("sidebar-collapsed", String(next));
+      // Dispatch custom event so Layout (same tab) updates its margin
+      window.dispatchEvent(new CustomEvent("sidebar-toggle", { detail: { collapsed: next } }));
+      return next;
     });
   };
 

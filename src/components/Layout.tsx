@@ -8,15 +8,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
+    // Read initial state
     const stored = localStorage.getItem("sidebar-collapsed");
     if (stored === "true") setCollapsed(true);
 
-    // Listen for sidebar toggle events
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === "sidebar-collapsed") setCollapsed(e.newValue === "true");
+    // Listen for same-tab toggle events dispatched by Sidebar
+    const onToggle = (e: Event) => {
+      setCollapsed((e as CustomEvent<{ collapsed: boolean }>).detail.collapsed);
     };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
+    window.addEventListener("sidebar-toggle", onToggle);
+    return () => window.removeEventListener("sidebar-toggle", onToggle);
   }, []);
 
   return (

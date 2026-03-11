@@ -339,15 +339,18 @@ export default function MasterGanttPage() {
     e.stopPropagation();
     setPopover(null);
 
-    const durationDays = differenceInDays(parseISO(phase.endDate), parseISO(phase.startDate));
+    // Use optimistic dates if a previous drag hasn't saved yet — avoids stale position
+    const effectiveStart = optimisticDates[phase.id]?.startDate ?? phase.startDate;
+    const effectiveEnd = optimisticDates[phase.id]?.endDate ?? phase.endDate;
+    const durationDays = differenceInDays(parseISO(effectiveEnd), parseISO(effectiveStart));
     // Bar's current left pixel position in the timeline
-    const barStartDay = differenceInDays(parseISO(phase.startDate), viewStartRef.current);
+    const barStartDay = differenceInDays(parseISO(effectiveStart), viewStartRef.current);
     const barStartLeft = barStartDay * DAY_WIDTH;
 
     dragDataRef.current = {
       phaseId: phase.id,
-      startDate: phase.startDate,
-      endDate: phase.endDate,
+      startDate: effectiveStart,
+      endDate: effectiveEnd,
       durationDays,
       startMouseX: e.clientX,
       startScrollLeft: scrollRef.current.scrollLeft,
