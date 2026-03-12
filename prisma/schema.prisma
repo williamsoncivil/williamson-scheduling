@@ -24,6 +24,7 @@ model User {
   messages             Message[]
   documents            Document[]
   messagesLastReadAt   DateTime?
+  emailNotifications   Boolean          @default(true)
   mentions             MessageMention[]
 }
 

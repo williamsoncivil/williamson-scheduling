@@ -22,6 +22,8 @@ export default function SettingsPage() {
   const { data: session } = useSession();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [emailNotifications, setEmailNotifications] = useState(true);
+  const [savingPref, setSavingPref] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<User>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -54,7 +56,22 @@ export default function SettingsPage() {
 
   useEffect(() => {
     fetchUsers();
+    // Load current user's own preferences
+    fetch("/api/users/me").then((r) => r.json()).then((d) => {
+      if (typeof d.emailNotifications === "boolean") setEmailNotifications(d.emailNotifications);
+    });
   }, []);
+
+  const toggleEmailNotifications = async (val: boolean) => {
+    setEmailNotifications(val);
+    setSavingPref(true);
+    await fetch("/api/users/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emailNotifications: val }),
+    });
+    setSavingPref(false);
+  };
 
   const isAdmin = session?.user?.role === "ADMIN";
 
@@ -158,6 +175,32 @@ export default function SettingsPage() {
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
           <p className="text-gray-500 text-sm mt-0.5">Manage team members and access</p>
+        </div>
+
+        {/* ── My Notifications (visible to everyone) ── */}
+        <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+          <h2 className="font-semibold text-gray-900 mb-1">My Notifications</h2>
+          <p className="text-sm text-gray-500 mb-4">Choose how you want to be notified when someone @mentions you.</p>
+          <div className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+            <div>
+              <p className="text-sm font-medium text-gray-900">Email notifications</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Get an email when someone @mentions you in a message
+              </p>
+            </div>
+            <button
+              onClick={() => toggleEmailNotifications(!emailNotifications)}
+              disabled={savingPref}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                emailNotifications ? "bg-blue-600" : "bg-gray-200"
+              }`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                emailNotifications ? "translate-x-6" : "translate-x-1"
+              }`} />
+            </button>
+          </div>
+          {savingPref && <p className="text-xs text-gray-400 mt-2">Saving…</p>}
         </div>
 
         {!isAdmin && (

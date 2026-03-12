@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { sendMentionEmail } from "@/lib/email";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Parse @mentions: match @Name or @First Last (two words)
-  const allUsers = await prisma.user.findMany({ select: { id: true, name: true } });
+  const allUsers = await prisma.user.findMany({ select: { id: true, name: true, email: true, emailNotifications: true } });
   const mentionedUserIds: string[] = [];
 
   // Sort by name length desc so "John Smith" matches before "John"
@@ -70,6 +71,28 @@ export async function POST(req: NextRequest) {
       mentions: { include: { user: { select: { id: true, name: true } } } },
     },
   });
+
+  // Send email notifications to mentioned users who have it enabled
+  if (mentionedUserIds.length > 0) {
+    const job = await prisma.job.findUnique({ where: { id: jobId }, select: { name: true } });
+    const phase = phaseId ? await prisma.phase.findUnique({ where: { id: phaseId }, select: { name: true } }) : null;
+    const authorUser = await prisma.user.findUnique({ where: { id: session.user.id }, select: { name: true } });
+
+    for (const uid of mentionedUserIds) {
+      const mentionedUser = allUsers.find((u) => u.id === uid);
+      if (mentionedUser?.emailNotifications && mentionedUser.email) {
+        // Fire and forget — don't await so response isn't delayed
+        sendMentionEmail({
+          toEmail: mentionedUser.email,
+          toName: mentionedUser.name,
+          fromName: authorUser?.name ?? "A teammate",
+          messageContent: content.trim(),
+          jobName: job?.name ?? jobId,
+          phaseName: phase?.name,
+        }).catch(console.error);
+      }
+    }
+  }
 
   return NextResponse.json(message, { status: 201 });
 }
