@@ -44,6 +44,7 @@ export default function SchedulePage() {
   const [viewMode, setViewMode] = useState<"week" | "month">("week");
   const [groupBy, setGroupBy] = useState<GroupBy>("people");
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
+  const [jobDropdownOpen, setJobDropdownOpen] = useState(false);
 
   // Drag state for entries
   const dragEntryRef = useRef<{ entryId: string } | null>(null);
@@ -338,18 +339,69 @@ export default function SchedulePage() {
           </div>
         </div>
 
-        {/* Filter */}
-        <div className="mb-4">
-          <select
-            value={filterUserId}
-            onChange={(e) => setFilterUserId(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-          >
-            <option value="">All People</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>{u.name}</option>
-            ))}
-          </select>
+        {/* Filter row */}
+        <div className="mb-4 flex items-center gap-3 flex-wrap">
+          {groupBy === "people" ? (
+            /* People filter */
+            <select
+              value={filterUserId}
+              onChange={(e) => setFilterUserId(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="">All People</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+          ) : (
+            /* Jobs multi-select dropdown */
+            <div className="relative">
+              <button
+                onClick={() => setJobDropdownOpen((o) => !o)}
+                className="flex items-center gap-2 border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-40"
+              >
+                <span className="flex-1 text-left text-gray-700">
+                  {selectedJobIds.size === 0 || selectedJobIds.size === allJobRows.length
+                    ? "All Jobs"
+                    : `${selectedJobIds.size} of ${allJobRows.length} jobs`}
+                </span>
+                <span className="text-gray-400 text-xs">{jobDropdownOpen ? "▲" : "▼"}</span>
+              </button>
+
+              {jobDropdownOpen && (
+                <div className="absolute top-full left-0 mt-1 z-30 bg-white border border-gray-200 rounded-xl shadow-lg w-56 py-1">
+                  <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-100">
+                    <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Jobs</span>
+                    <div className="flex gap-2">
+                      <button onClick={() => setSelectedJobIds(new Set(allJobRows.map((j) => j.id)))}
+                        className="text-[10px] text-blue-600 hover:text-blue-800 font-medium">All</button>
+                      <button onClick={() => setSelectedJobIds(new Set())}
+                        className="text-[10px] text-gray-400 hover:text-gray-600 font-medium">None</button>
+                    </div>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto">
+                    {allJobRows.map((job) => {
+                      const checked = selectedJobIds.size === 0 || selectedJobIds.has(job.id);
+                      return (
+                        <label key={job.id} className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-gray-50">
+                          <input type="checkbox" checked={checked} onChange={() => toggleJob(job.id)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0" />
+                          <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: job.color }} />
+                          <span className="text-xs text-gray-800 truncate">{job.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <div className="border-t border-gray-100 px-3 py-1.5">
+                    <button onClick={() => setJobDropdownOpen(false)}
+                      className="w-full text-center text-xs text-gray-500 hover:text-gray-700 font-medium py-0.5">
+                      Done
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {loading ? (
@@ -374,99 +426,66 @@ export default function SchedulePage() {
               </div>
             </div>
           ) : (
-            /* By Jobs: job selector on left + grid on right */
-            <div className="flex gap-4 items-start">
-              {/* ── Job selector panel ──────────────────────────────────────── */}
-              <div className="w-52 shrink-0 bg-white rounded-xl shadow-sm overflow-hidden">
-                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
-                  <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Jobs</span>
-                  <div className="flex gap-2">
-                    <button onClick={() => setSelectedJobIds(new Set(allJobRows.map((j) => j.id)))}
-                      className="text-[10px] text-blue-600 hover:text-blue-800 font-medium">All</button>
-                    <button onClick={() => setSelectedJobIds(new Set())}
-                      className="text-[10px] text-gray-400 hover:text-gray-600 font-medium">None</button>
-                  </div>
+            /* By Jobs: full-width grid, filtered by job dropdown */
+            <div className="bg-white rounded-xl shadow-sm overflow-hidden" onClick={() => setJobDropdownOpen(false)}>
+              {visibleJobRows.length === 0 ? (
+                <div className="p-8 text-center text-gray-400">
+                  {allJobRows.length === 0 ? "No schedule entries this week" : "No jobs selected — use the Jobs dropdown above"}
                 </div>
-                {allJobRows.length === 0 ? (
-                  <p className="p-4 text-xs text-gray-400">No jobs this week</p>
-                ) : (
-                  <div className="divide-y divide-gray-50">
-                    {allJobRows.map((job) => {
-                      const checked = selectedJobIds.size === 0 || selectedJobIds.has(job.id);
-                      return (
-                        <label key={job.id} className={`flex items-center gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-gray-50 transition-colors ${checked ? "" : "opacity-50"}`}>
-                          <input type="checkbox" checked={checked} onChange={() => toggleJob(job.id)}
-                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0" />
-                          <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: job.color }} />
-                          <span className="text-xs text-gray-800 leading-tight truncate">{job.name}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* ── Schedule grid ────────────────────────────────────────────── */}
-              <div className="flex-1 min-w-0 bg-white rounded-xl shadow-sm overflow-hidden">
-                {visibleJobRows.length === 0 ? (
-                  <div className="p-8 text-center text-gray-400">No jobs selected — check the list on the left</div>
-                ) : (
-                  <>
-                    {/* Header */}
-                    <div className="flex border-b border-gray-100">
-                      <div className="w-36 shrink-0 px-3 py-3 border-r border-gray-100">
-                        <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Job</span>
-                      </div>
-                      {days.map((day) => (
-                        <div key={day.toISOString()} className="flex-1 p-3 text-center border-r last:border-r-0 border-gray-100">
-                          <p className="text-xs font-medium text-gray-400 uppercase">{format(day, "EEE")}</p>
-                          <p className={`text-lg font-semibold mt-0.5 ${isSameDay(day, new Date()) ? "text-blue-600" : "text-gray-700"}`}>
-                            {format(day, "d")}
-                          </p>
-                        </div>
-                      ))}
+              ) : (
+                <>
+                  <div className="flex border-b border-gray-100">
+                    <div className="w-44 shrink-0 px-3 py-3 border-r border-gray-100">
+                      <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Job</span>
                     </div>
-                    {/* Job rows */}
-                    {visibleJobRows.map((job) => (
-                      <div key={job.id} className="flex border-b last:border-b-0 border-gray-100" style={{ minHeight: 80 }}>
-                        <div className="w-36 shrink-0 px-3 py-2 border-r border-gray-100 flex items-start gap-2 pt-3">
-                          <div className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5" style={{ backgroundColor: job.color }} />
-                          <Link href={`/jobs/${job.id}`} className="text-xs font-semibold text-gray-800 hover:underline leading-tight">
-                            {job.name}
-                          </Link>
-                        </div>
-                        {days.map((day) => {
-                          const dateStr = format(day, "yyyy-MM-dd");
-                          const dayEntries = getEntriesForJobAndDay(job.id, day);
-                          const isToday = isSameDay(day, new Date());
-                          const isDragOver = dragOverKey === dateStr;
-                          return (
-                            <div key={day.toISOString()}
-                              className={`flex-1 p-2 border-r last:border-r-0 border-gray-100 transition-colors ${isToday ? "bg-blue-50/50" : ""} ${isDragOver ? "bg-green-50 ring-2 ring-inset ring-green-300" : ""}`}
-                              onDragOver={(e) => handleDayDragOver(e, dateStr)}
-                              onDrop={(e) => handleDayDrop(e, dateStr)}
-                              onDragLeave={handleDayDragLeave}
-                            >
-                              {dayEntries.map((entry) => (
-                                <div key={entry.id} draggable
-                                  onDragStart={(e) => handleEntryDragStart(e, entry)}
-                                  onClick={(e) => { e.stopPropagation(); openEntryModal(entry); }}
-                                  className="mb-1.5 p-1.5 rounded-lg text-white text-xs cursor-pointer hover:opacity-90 transition-opacity select-none"
-                                  style={{ backgroundColor: job.color }}
-                                >
-                                  <p className="font-semibold truncate">{entry.user.name.split(" ")[0]}</p>
-                                  {entry.phase && <p className="opacity-80 truncate text-[10px]">{entry.phase.name}</p>}
-                                  <p className="opacity-70 text-[10px]">{entry.startTime}–{entry.endTime}</p>
-                                </div>
-                              ))}
-                            </div>
-                          );
-                        })}
+                    {days.map((day) => (
+                      <div key={day.toISOString()} className="flex-1 p-3 text-center border-r last:border-r-0 border-gray-100">
+                        <p className="text-xs font-medium text-gray-400 uppercase">{format(day, "EEE")}</p>
+                        <p className={`text-lg font-semibold mt-0.5 ${isSameDay(day, new Date()) ? "text-blue-600" : "text-gray-700"}`}>
+                          {format(day, "d")}
+                        </p>
                       </div>
                     ))}
-                  </>
-                )}
-              </div>
+                  </div>
+                  {visibleJobRows.map((job) => (
+                    <div key={job.id} className="flex border-b last:border-b-0 border-gray-100" style={{ minHeight: 80 }}>
+                      <div className="w-44 shrink-0 px-3 py-2 border-r border-gray-100 flex items-start gap-2 pt-3">
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0 mt-0.5" style={{ backgroundColor: job.color }} />
+                        <Link href={`/jobs/${job.id}`} className="text-xs font-semibold text-gray-800 hover:underline leading-tight">
+                          {job.name}
+                        </Link>
+                      </div>
+                      {days.map((day) => {
+                        const dateStr = format(day, "yyyy-MM-dd");
+                        const dayEntries = getEntriesForJobAndDay(job.id, day);
+                        const isToday = isSameDay(day, new Date());
+                        const isDragOver = dragOverKey === dateStr;
+                        return (
+                          <div key={day.toISOString()}
+                            className={`flex-1 p-2 border-r last:border-r-0 border-gray-100 transition-colors ${isToday ? "bg-blue-50/50" : ""} ${isDragOver ? "bg-green-50 ring-2 ring-inset ring-green-300" : ""}`}
+                            onDragOver={(e) => handleDayDragOver(e, dateStr)}
+                            onDrop={(e) => handleDayDrop(e, dateStr)}
+                            onDragLeave={handleDayDragLeave}
+                          >
+                            {dayEntries.map((entry) => (
+                              <div key={entry.id} draggable
+                                onDragStart={(e) => handleEntryDragStart(e, entry)}
+                                onClick={(e) => { e.stopPropagation(); openEntryModal(entry); }}
+                                className="mb-1.5 p-1.5 rounded-lg text-white text-xs cursor-pointer hover:opacity-90 transition-opacity select-none"
+                                style={{ backgroundColor: job.color }}
+                              >
+                                <p className="font-semibold truncate">{entry.user.name.split(" ")[0]}</p>
+                                {entry.phase && <p className="opacity-80 truncate text-[10px]">{entry.phase.name}</p>}
+                                <p className="opacity-70 text-[10px]">{entry.startTime}–{entry.endTime}</p>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </>
+              )}
             </div>
           )
         ) : (
