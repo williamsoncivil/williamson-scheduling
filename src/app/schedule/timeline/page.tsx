@@ -116,6 +116,7 @@ export default function TimelinePage() {
     barColor: string;
   } | null>(null);
   const isDraggingRef = useRef(false);
+  const wasDragRef = useRef(false);
 
   // Stable refs for values used inside window event handlers
   const dayWidthRef = useRef(getDayWidth(DEFAULT_WEEK_RANGE));
@@ -132,6 +133,11 @@ export default function TimelinePage() {
 
   const [optimisticDates, setOptimisticDates] = useState<Record<string, { startDate: string; endDate: string }>>({});
   const [saving, setSaving] = useState(false);
+  const [editModal, setEditModal] = useState<{
+    phase: Phase; jobName: string;
+    startDate: string; endDate: string;
+    saving: boolean; error: string;
+  } | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -184,6 +190,7 @@ export default function TimelinePage() {
       const newStart = addDays(vs, dayIndex);
       const newEnd = addDays(newStart, drag.durationDays);
 
+      wasDragRef.current = true;
       setDragGhost({
         left: dayIndex * dw,
         width: (drag.durationDays + 1) * dw,
@@ -297,24 +304,48 @@ export default function TimelinePage() {
     barColor: string,
   ) => {
     if (!phase.startDate || !phase.endDate) return;
-    e.preventDefault();
     e.stopPropagation();
 
-    const durationDays = differenceInDays(parseISO(phase.endDate), parseISO(phase.startDate));
+    const eff = optimisticDates[phase.id];
+    const effectiveStart = eff?.startDate ?? phase.startDate;
+    const effectiveEnd = eff?.endDate ?? phase.endDate;
+    const durationDays = differenceInDays(parseISO(effectiveEnd), parseISO(effectiveStart));
 
     dragDataRef.current = {
       phaseId: phase.id,
       jobId: job.id,
-      startDate: phase.startDate,
-      endDate: phase.endDate,
+      startDate: effectiveStart,
+      endDate: effectiveEnd,
       durationDays,
       startMouseX: e.clientX,
       barTop,
       barColor,
     };
     isDraggingRef.current = true;
+    wasDragRef.current = false;
     setDragPhaseId(phase.id);
     setTooltip(null);
+  };
+
+  const saveEditModal = async () => {
+    if (!editModal) return;
+    setEditModal((m) => m ? { ...m, saving: true, error: "" } : null);
+    try {
+      const res = await fetch(`/api/phases/${editModal.phase.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startDate: editModal.startDate, endDate: editModal.endDate }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      setOptimisticDates((prev) => ({
+        ...prev,
+        [editModal.phase.id]: { startDate: editModal.startDate, endDate: editModal.endDate },
+      }));
+      setEditModal(null);
+      fetchData();
+    } catch {
+      setEditModal((m) => m ? { ...m, saving: false, error: "Failed to save — try again" } : null);
+    }
   };
 
   if (loading || !data) {
@@ -556,7 +587,14 @@ export default function TimelinePage() {
                                 onMouseLeave={() => { if (!isDraggingRef.current) setTooltip(null); }}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  if (!isDraggingRef.current) handleBarMouseEnter(e, phase, job);
+                                  if (wasDragRef.current) { wasDragRef.current = false; return; }
+                                  const eff = optimisticDates[phase.id];
+                                  setEditModal({
+                                    phase, jobName: job.name,
+                                    startDate: eff?.startDate ?? phase.startDate ?? "",
+                                    endDate: eff?.endDate ?? phase.endDate ?? "",
+                                    saving: false, error: "",
+                                  });
                                 }}
                               >
                                 {bar.width > 50 && (
@@ -611,6 +649,43 @@ export default function TimelinePage() {
           </div>
         )}
       </div>
+
+      {/* Edit dates modal */}
+      {editModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setEditModal(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-80 mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4">
+              <h3 className="font-semibold text-gray-900 text-base">{editModal.phase.name}</h3>
+              <p className="text-xs text-gray-400 mt-0.5">{editModal.jobName}</p>
+            </div>
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
+                <input type="date" value={editModal.startDate}
+                  onChange={(e) => setEditModal((m) => m ? { ...m, startDate: e.target.value } : null)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">End Date</label>
+                <input type="date" value={editModal.endDate}
+                  onChange={(e) => setEditModal((m) => m ? { ...m, endDate: e.target.value } : null)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+            </div>
+            {editModal.error && <p className="text-xs text-red-500 mb-3">{editModal.error}</p>}
+            <div className="flex gap-2">
+              <button onClick={saveEditModal} disabled={editModal.saving || !editModal.startDate || !editModal.endDate}
+                className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50">
+                {editModal.saving ? "Saving…" : "Save"}
+              </button>
+              <button onClick={() => setEditModal(null)}
+                className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Hover Tooltip ──────────────────────────────────────────────────────────── */}
       {tooltip && (

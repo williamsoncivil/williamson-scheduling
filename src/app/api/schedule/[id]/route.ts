@@ -9,13 +9,21 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const { date } = body;
+  const { date, startTime, endTime, notes } = body;
 
-  if (!date) return NextResponse.json({ error: "Missing date" }, { status: 400 });
+  const data: Record<string, unknown> = {};
+  if (date) data.date = parseISO(date);
+  if (startTime) data.startTime = startTime;
+  if (endTime) data.endTime = endTime;
+  if (notes !== undefined) data.notes = notes;
+
+  if (Object.keys(data).length === 0) {
+    return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+  }
 
   const entry = await prisma.scheduleEntry.update({
     where: { id: params.id },
-    data: { date: parseISO(date) },
+    data,
     include: {
       user: { select: { id: true, name: true, role: true } },
       supervisor: { select: { id: true, name: true } },

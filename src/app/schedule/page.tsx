@@ -49,6 +49,15 @@ export default function SchedulePage() {
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
   const [optimisticDates, setOptimisticDates] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [entryModal, setEntryModal] = useState<{
+    entry: ScheduleEntry;
+    date: string;
+    startTime: string;
+    endTime: string;
+    notes: string;
+    saving: boolean;
+    error: string;
+  } | null>(null);
 
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 });
   const weekEnd = endOfWeek(currentDate, { weekStartsOn: 0 });
@@ -90,6 +99,48 @@ export default function SchedulePage() {
     { start: monthStart, end: monthEnd },
     { weekStartsOn: 0 }
   );
+
+  // ── Entry click-to-edit ────────────────────────────────────────────────────
+  const openEntryModal = (entry: ScheduleEntry) => {
+    const dateStr = (optimisticDates[entry.id] ?? entry.date).split("T")[0];
+    setEntryModal({
+      entry,
+      date: dateStr,
+      startTime: entry.startTime,
+      endTime: entry.endTime,
+      notes: entry.notes ?? "",
+      saving: false,
+      error: "",
+    });
+  };
+
+  const saveEntryModal = async () => {
+    if (!entryModal) return;
+    setEntryModal((m) => m ? { ...m, saving: true, error: "" } : null);
+    try {
+      const res = await fetch(`/api/schedule/${entryModal.entry.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: entryModal.date,
+          startTime: entryModal.startTime,
+          endTime: entryModal.endTime,
+          notes: entryModal.notes,
+        }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      setEntryModal(null);
+      // Refetch
+      const weekStr = format(weekStart, "yyyy-MM-dd");
+      const url = filterUserId
+        ? `/api/schedule?week=${weekStr}&userId=${filterUserId}`
+        : `/api/schedule?week=${weekStr}`;
+      const d = await fetch(url).then((r) => r.json());
+      setEntries(d);
+    } catch {
+      setEntryModal((m) => m ? { ...m, saving: false, error: "Failed to save — try again" } : null);
+    }
+  };
 
   // ── Drag handlers ──────────────────────────────────────────────────────────
   const handleEntryDragStart = (e: React.DragEvent, entry: ScheduleEntry) => {
@@ -173,7 +224,8 @@ export default function SchedulePage() {
       key={entry.id}
       draggable
       onDragStart={(e) => handleEntryDragStart(e, entry)}
-      className="mb-1.5 p-2 rounded-lg text-white text-xs cursor-grab active:cursor-grabbing hover:opacity-90 transition-opacity select-none"
+      onClick={(e) => { e.stopPropagation(); openEntryModal(entry); }}
+      className="mb-1.5 p-2 rounded-lg text-white text-xs cursor-pointer hover:opacity-90 active:opacity-75 transition-opacity select-none"
       style={{ backgroundColor: entry.job.color }}
     >
       <p className="font-semibold truncate">
@@ -426,6 +478,59 @@ export default function SchedulePage() {
           </div>
         )}
       </div>
+      {/* Entry edit modal */}
+      {entryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setEntryModal(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-80 mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4">
+              <h3 className="font-semibold text-gray-900 text-base">{entryModal.entry.job.name}</h3>
+              <p className="text-xs text-gray-400 mt-0.5">
+                {entryModal.entry.user.name}
+                {entryModal.entry.phase && ` · ${entryModal.entry.phase.name}`}
+              </p>
+            </div>
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Date</label>
+                <input type="date" value={entryModal.date}
+                  onChange={(e) => setEntryModal((m) => m ? { ...m, date: e.target.value } : null)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Start</label>
+                  <input type="time" value={entryModal.startTime}
+                    onChange={(e) => setEntryModal((m) => m ? { ...m, startTime: e.target.value } : null)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">End</label>
+                  <input type="time" value={entryModal.endTime}
+                    onChange={(e) => setEntryModal((m) => m ? { ...m, endTime: e.target.value } : null)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Notes <span className="text-gray-400">(optional)</span></label>
+                <textarea value={entryModal.notes} rows={2}
+                  onChange={(e) => setEntryModal((m) => m ? { ...m, notes: e.target.value } : null)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
+              </div>
+            </div>
+            {entryModal.error && <p className="text-xs text-red-500 mb-3">{entryModal.error}</p>}
+            <div className="flex gap-2">
+              <button onClick={saveEntryModal} disabled={entryModal.saving}
+                className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50">
+                {entryModal.saving ? "Saving…" : "Save"}
+              </button>
+              <button onClick={() => setEntryModal(null)}
+                className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }
