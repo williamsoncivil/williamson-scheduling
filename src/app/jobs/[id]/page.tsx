@@ -6,7 +6,21 @@ import { useSession } from "next-auth/react";
 import Layout from "@/components/Layout";
 import CopyJobModal from "@/components/CopyJobModal";
 import Link from "next/link";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, differenceInDays, addDays } from "date-fns";
+
+const DURATION_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 10, 14, 21, 28, 30, 45, 60, 90];
+
+function endFromDuration(start: string, days: number): string {
+  try { return format(addDays(parseISO(start), days - 1), "yyyy-MM-dd"); }
+  catch { return ""; }
+}
+
+function durationFromDates(start: string, end: string): number | null {
+  try {
+    const d = differenceInDays(parseISO(end), parseISO(start)) + 1;
+    return d > 0 ? d : null;
+  } catch { return null; }
+}
 
 type TabId = "overview" | "phases" | "schedule" | "files" | "messages" | "production";
 
@@ -146,9 +160,12 @@ export default function JobDetailPage() {
   // Phases
   const [newPhaseName, setNewPhaseName] = useState("");
   const [newPhaseDesc, setNewPhaseDesc] = useState("");
+  const [newPhaseStart, setNewPhaseStart] = useState("");
+  const [newPhaseDuration, setNewPhaseDuration] = useState<number | "">(7);
   const [editingPhaseId, setEditingPhaseId] = useState<string | null>(null);
   const [phaseEditStart, setPhaseEditStart] = useState("");
   const [phaseEditEnd, setPhaseEditEnd] = useState("");
+  const [phaseEditDuration, setPhaseEditDuration] = useState<number | "">("");
   const [phaseEditDependsOn, setPhaseEditDependsOn] = useState("");
   const [cascadeModal, setCascadeModal] = useState<CascadeModal | null>(null);
   const [savingPhase, setSavingPhase] = useState(false);
@@ -311,13 +328,17 @@ export default function JobDetailPage() {
   const addPhase = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPhaseName) return;
+    const startDate = newPhaseStart || null;
+    const endDate = (startDate && newPhaseDuration) ? endFromDuration(startDate, Number(newPhaseDuration)) : null;
     await fetch(`/api/jobs/${jobId}/phases`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newPhaseName, description: newPhaseDesc }),
+      body: JSON.stringify({ name: newPhaseName, description: newPhaseDesc, startDate, endDate }),
     });
     setNewPhaseName("");
     setNewPhaseDesc("");
+    setNewPhaseStart("");
+    setNewPhaseDuration(7);
     fetchJob();
   };
 
@@ -350,8 +371,11 @@ export default function JobDetailPage() {
 
   const startEditPhaseDates = (phase: Phase) => {
     setEditingPhaseId(phase.id);
-    setPhaseEditStart(phase.startDate ? phase.startDate.split("T")[0] : "");
-    setPhaseEditEnd(phase.endDate ? phase.endDate.split("T")[0] : "");
+    const start = phase.startDate ? phase.startDate.split("T")[0] : "";
+    const end = phase.endDate ? phase.endDate.split("T")[0] : "";
+    setPhaseEditStart(start);
+    setPhaseEditEnd(end);
+    setPhaseEditDuration(durationFromDates(start, end) ?? "");
     setPhaseEditDependsOn(phase.dependsOnId || "");
   };
 
@@ -999,22 +1023,44 @@ export default function JobDetailPage() {
                       {/* Phase date editor */}
                       {editingPhaseId === phase.id && (
                         <div className="p-4 border-t border-gray-200 bg-white">
-                          <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="grid gap-3 sm:grid-cols-3">
                             <div>
                               <label className="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
                               <input
                                 type="date"
                                 value={phaseEditStart}
-                                onChange={(e) => setPhaseEditStart(e.target.value)}
+                                onChange={(e) => {
+                                  setPhaseEditStart(e.target.value);
+                                  if (phaseEditDuration && e.target.value)
+                                    setPhaseEditEnd(endFromDuration(e.target.value, Number(phaseEditDuration)));
+                                }}
                                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                               />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Duration (days)</label>
+                              <select
+                                value={phaseEditDuration}
+                                onChange={(e) => {
+                                  const d = e.target.value ? Number(e.target.value) : "";
+                                  setPhaseEditDuration(d);
+                                  if (d && phaseEditStart) setPhaseEditEnd(endFromDuration(phaseEditStart, Number(d)));
+                                }}
+                                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              >
+                                <option value="">— custom —</option>
+                                {DURATION_OPTIONS.map((d) => <option key={d} value={d}>{d}d</option>)}
+                              </select>
                             </div>
                             <div>
                               <label className="block text-xs font-medium text-gray-600 mb-1">End Date</label>
                               <input
                                 type="date"
                                 value={phaseEditEnd}
-                                onChange={(e) => setPhaseEditEnd(e.target.value)}
+                                onChange={(e) => {
+                                  setPhaseEditEnd(e.target.value);
+                                  setPhaseEditDuration(durationFromDates(phaseEditStart, e.target.value) ?? "");
+                                }}
                                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                               />
                             </div>
@@ -1059,6 +1105,28 @@ export default function JobDetailPage() {
                 <input type="text" value={newPhaseDesc} onChange={(e) => setNewPhaseDesc(e.target.value)}
                   placeholder="Description (optional)"
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Start Date <span className="text-gray-400">(optional)</span></label>
+                    <input type="date" value={newPhaseStart}
+                      onChange={(e) => setNewPhaseStart(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Duration (days)</label>
+                    <select value={newPhaseDuration}
+                      onChange={(e) => setNewPhaseDuration(e.target.value ? Number(e.target.value) : "")}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                      <option value="">— set later —</option>
+                      {DURATION_OPTIONS.map((d) => <option key={d} value={d}>{d} day{d !== 1 ? "s" : ""}</option>)}
+                    </select>
+                  </div>
+                </div>
+                {newPhaseStart && newPhaseDuration && (
+                  <p className="text-xs text-blue-600">
+                    End: {format(addDays(parseISO(newPhaseStart), Number(newPhaseDuration) - 1), "MMM d, yyyy")}
+                  </p>
+                )}
                 <button type="submit" className="bg-blue-600 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-700">
                   Add Phase
                 </button>

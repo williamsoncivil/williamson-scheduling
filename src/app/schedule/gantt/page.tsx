@@ -3,6 +3,16 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import Layout from "@/components/Layout";
 import Link from "next/link";
+const DURATION_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 10, 14, 21, 28, 30, 45, 60, 90];
+function endFromDuration(start: string, days: number): string {
+  try { return format(addDays(parseISO(start), days - 1), "yyyy-MM-dd"); }
+  catch { return ""; }
+}
+function durationFromDates(start: string, end: string): number | null {
+  try { const d = differenceInDays(parseISO(end), parseISO(start)) + 1; return d > 0 ? d : null; }
+  catch { return null; }
+}
+
 import {
   format,
   parseISO,
@@ -819,21 +829,33 @@ export default function MasterGanttPage() {
             <div className="space-y-3 mb-4">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
-                <input
-                  type="date"
-                  value={editModal.startDate}
-                  onChange={(e) => setEditModal((m) => m ? { ...m, startDate: e.target.value } : null)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                <input type="date" value={editModal.startDate}
+                  onChange={(e) => {
+                    const start = e.target.value;
+                    const dur = durationFromDates(editModal.startDate, editModal.endDate);
+                    const newEnd = dur && start ? endFromDuration(start, dur) : editModal.endDate;
+                    setEditModal((m) => m ? { ...m, startDate: start, endDate: newEnd } : null);
+                  }}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Duration (days)</label>
+                <select
+                  value={durationFromDates(editModal.startDate, editModal.endDate) ?? ""}
+                  onChange={(e) => {
+                    const d = Number(e.target.value);
+                    if (d && editModal.startDate) setEditModal((m) => m ? { ...m, endDate: endFromDuration(m.startDate, d) } : null);
+                  }}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="">— custom —</option>
+                  {DURATION_OPTIONS.map((d) => <option key={d} value={d}>{d} day{d !== 1 ? "s" : ""}</option>)}
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">End Date</label>
-                <input
-                  type="date"
-                  value={editModal.endDate}
+                <input type="date" value={editModal.endDate}
                   onChange={(e) => setEditModal((m) => m ? { ...m, endDate: e.target.value } : null)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             </div>
             {editModal.error && <p className="text-xs text-red-500 mb-3">{editModal.error}</p>}
