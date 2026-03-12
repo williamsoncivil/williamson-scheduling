@@ -585,9 +585,10 @@ export default function TimelinePage() {
                                 }}
                                 onMouseEnter={(e) => handleBarMouseEnter(e, phase, job)}
                                 onMouseLeave={() => { if (!isDraggingRef.current) setTooltip(null); }}
-                                onClick={(e) => {
+                                onMouseUp={(e) => {
+                                  // fires before window mouseup clears drag state — reliable click detection
+                                  if (wasDragRef.current) return;
                                   e.stopPropagation();
-                                  if (wasDragRef.current) { wasDragRef.current = false; return; }
                                   const eff = optimisticDates[phase.id];
                                   setEditModal({
                                     phase, jobName: job.name,
@@ -596,6 +597,7 @@ export default function TimelinePage() {
                                     saving: false, error: "",
                                   });
                                 }}
+                                onClick={(e) => e.stopPropagation()}
                               >
                                 {bar.width > 50 && (
                                   <span className="truncate text-[11px] font-semibold drop-shadow-sm">
