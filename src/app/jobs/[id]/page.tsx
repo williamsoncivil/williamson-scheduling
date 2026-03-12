@@ -323,6 +323,18 @@ export default function JobDetailPage() {
   const [schedWarning, setSchedWarning] = useState("");
   const [schedError, setSchedError] = useState("");
 
+  // Phase people assignment (from Phases tab)
+  const [phaseAssignModal, setPhaseAssignModal] = useState<{
+    phaseId: string; phaseName: string; phaseStart: string | null; phaseEnd: string | null;
+  } | null>(null);
+  const [assignUserId, setAssignUserId] = useState("");
+  const [assignStartDate, setAssignStartDate] = useState("");
+  const [assignEndDate, setAssignEndDate] = useState("");
+  const [assignStartTime, setAssignStartTime] = useState("07:00");
+  const [assignEndTime, setAssignEndTime] = useState("17:00");
+  const [assignWorkDays, setAssignWorkDays] = useState<number[]>([1, 2, 3, 4, 5]);
+  const [savingAssign, setSavingAssign] = useState(false);
+
   // Messages
   const [messages, setMessages] = useState<Message[]>([]);
   const [msgContent, setMsgContent] = useState("");
@@ -403,7 +415,8 @@ export default function JobDetailPage() {
   useEffect(() => {
     fetchJob();
     fetchUsers();
-  }, [fetchJob, fetchUsers]);
+    fetchSchedule();
+  }, [fetchJob, fetchUsers, fetchSchedule]);
 
   useEffect(() => {
     if (activeTab === "schedule") fetchSchedule();
@@ -760,6 +773,84 @@ export default function JobDetailPage() {
   const deleteEntry = async (id: string) => {
     await fetch(`/api/schedule/${id}`, { method: "DELETE" });
     fetchSchedule();
+  };
+
+  // ── Phase people assignment helpers ────────────────────────────────────────
+
+  /** Group schedule entries for a phase by user, return summary rows. */
+  const getPhaseAssignments = (phaseId: string) => {
+    const phaseEntries = scheduleEntries.filter((e) => e.phase?.id === phaseId);
+    const byUser: Record<string, { user: { id: string; name: string; role?: string }; dates: string[] }> = {};
+    for (const entry of phaseEntries) {
+      if (!byUser[entry.user.id]) byUser[entry.user.id] = { user: entry.user, dates: [] };
+      byUser[entry.user.id].dates.push(entry.date.split("T")[0]);
+    }
+    return Object.values(byUser).map(({ user, dates }) => {
+      const sorted = [...dates].sort();
+      return { user, startDate: sorted[0], endDate: sorted[sorted.length - 1], count: sorted.length };
+    });
+  };
+
+  const openAssignModal = (phase: Phase) => {
+    setPhaseAssignModal({ phaseId: phase.id, phaseName: phase.name, phaseStart: phase.startDate, phaseEnd: phase.endDate });
+    setAssignUserId("");
+    setAssignStartDate(phase.startDate?.split("T")[0] ?? "");
+    setAssignEndDate(phase.endDate?.split("T")[0] ?? "");
+    setAssignStartTime("07:00");
+    setAssignEndTime("17:00");
+    setAssignWorkDays([1, 2, 3, 4, 5]);
+  };
+
+  const toggleAssignWorkDay = (day: number) => {
+    setAssignWorkDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
+    );
+  };
+
+  const unassignPersonFromPhase = async (phaseId: string, userId: string) => {
+    if (!confirm("Remove this person from the phase?")) return;
+    const toDelete = scheduleEntries.filter((e) => e.phase?.id === phaseId && e.user.id === userId);
+    await Promise.all(toDelete.map((e) => fetch(`/api/schedule/${e.id}`, { method: "DELETE" })));
+    fetchSchedule();
+  };
+
+  const assignPersonToPhase = async () => {
+    if (!phaseAssignModal || !assignUserId || !assignStartDate || !assignEndDate) return;
+    setSavingAssign(true);
+    try {
+      const dates: string[] = [];
+      let d = parseISO(assignStartDate);
+      const endD = parseISO(assignEndDate);
+      while (d <= endD) {
+        if (assignWorkDays.includes(d.getDay())) dates.push(format(d, "yyyy-MM-dd"));
+        d = addDays(d, 1);
+      }
+      // Skip days already assigned
+      const alreadyAssigned = new Set(
+        scheduleEntries
+          .filter((e) => e.phase?.id === phaseAssignModal.phaseId && e.user.id === assignUserId)
+          .map((e) => e.date.split("T")[0])
+      );
+      const newDates = dates.filter((dt) => !alreadyAssigned.has(dt));
+      for (const date of newDates) {
+        await fetch("/api/schedule", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jobId,
+            phaseId: phaseAssignModal.phaseId,
+            userId: assignUserId,
+            date,
+            startTime: assignStartTime,
+            endTime: assignEndTime,
+          }),
+        });
+      }
+      setPhaseAssignModal(null);
+      fetchSchedule();
+    } finally {
+      setSavingAssign(false);
+    }
   };
 
   const sendMessage = async (e: React.FormEvent) => {
@@ -1252,6 +1343,45 @@ export default function JobDetailPage() {
                         >
                           + Add Predecessor
                         </button>
+                      </div>
+
+                      {/* Assigned People */}
+                      <div className="px-4 py-3 border-t border-gray-100 bg-white">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Assigned</p>
+                          <button
+                            onClick={() => openAssignModal(phase)}
+                            className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                          >
+                            + Assign
+                          </button>
+                        </div>
+                        {getPhaseAssignments(phase.id).length === 0 ? (
+                          <p className="text-xs text-gray-400 italic">No one assigned yet</p>
+                        ) : (
+                          <div className="space-y-1">
+                            {getPhaseAssignments(phase.id).map(({ user, startDate, endDate, count }) => (
+                              <div key={user.id} className="flex items-center justify-between gap-2 text-xs">
+                                <span className="text-gray-700">
+                                  <span className="font-medium">{user.name}</span>
+                                  {" "}
+                                  <span className="text-gray-400">
+                                    {startDate && format(parseISO(startDate), "MMM d")}
+                                    {startDate !== endDate && endDate && ` – ${format(parseISO(endDate), "MMM d")}`}
+                                    {" "}({count}d)
+                                  </span>
+                                </span>
+                                <button
+                                  onClick={() => unassignPersonFromPhase(phase.id, user.id)}
+                                  className="text-red-400 hover:text-red-600 shrink-0"
+                                  title="Remove from phase"
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       {/* Phase date editor */}
@@ -2047,6 +2177,100 @@ export default function JobDetailPage() {
                 className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
               >
                 {savingEditDep ? "Saving..." : "Save & Apply Dates"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Assign Person to Phase Modal */}
+      {phaseAssignModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Assign to Phase</h3>
+            <p className="text-sm text-gray-500 mb-4"><strong>{phaseAssignModal.phaseName}</strong></p>
+
+            <div className="space-y-4">
+              {/* Person */}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Person</label>
+                <select
+                  value={assignUserId}
+                  onChange={(e) => setAssignUserId(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">— Select person —</option>
+                  {["ADMIN", "EMPLOYEE", "SUBCONTRACTOR"].map((role) => {
+                    const group = users.filter((u) => u.role === role);
+                    if (!group.length) return null;
+                    return (
+                      <optgroup key={role} label={role.charAt(0) + role.slice(1).toLowerCase() + "s"}>
+                        {group.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </optgroup>
+                    );
+                  })}
+                </select>
+              </div>
+
+              {/* Date range */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Start Date</label>
+                  <input type="date" value={assignStartDate} onChange={(e) => setAssignStartDate(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">End Date</label>
+                  <input type="date" value={assignEndDate} onChange={(e) => setAssignEndDate(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+
+              {/* Hours */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Start Time</label>
+                  <input type="time" value={assignStartTime} onChange={(e) => setAssignStartTime(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">End Time</label>
+                  <input type="time" value={assignEndTime} onChange={(e) => setAssignEndTime(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+
+              {/* Working days toggles */}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-2">Working Days</label>
+                <div className="flex gap-1.5">
+                  {[{l:"M",d:1},{l:"T",d:2},{l:"W",d:3},{l:"Th",d:4},{l:"F",d:5},{l:"Sa",d:6},{l:"Su",d:0}].map(({l,d}) => (
+                    <button key={d} type="button" onClick={() => toggleAssignWorkDay(d)}
+                      className={`w-9 h-9 rounded-lg text-xs font-medium transition-colors ${assignWorkDays.includes(d) ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Preview count */}
+              {assignStartDate && assignEndDate && assignWorkDays.length > 0 && (() => {
+                let count = 0;
+                let d = parseISO(assignStartDate);
+                const end = parseISO(assignEndDate);
+                while (d <= end) { if (assignWorkDays.includes(d.getDay())) count++; d = addDays(d, 1); }
+                return <p className="text-xs text-blue-600">{count} day{count !== 1 ? "s" : ""} will be scheduled</p>;
+              })()}
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button onClick={() => setPhaseAssignModal(null)}
+                className="flex-1 border border-gray-300 text-gray-700 py-2 px-4 rounded-lg text-sm hover:bg-gray-50">
+                Cancel
+              </button>
+              <button onClick={assignPersonToPhase}
+                disabled={savingAssign || !assignUserId || !assignStartDate || !assignEndDate}
+                className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                {savingAssign ? "Assigning..." : "Assign"}
               </button>
             </div>
           </div>
