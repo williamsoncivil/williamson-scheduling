@@ -46,11 +46,6 @@ export default function SchedulePage() {
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
   const [jobDropdownOpen, setJobDropdownOpen] = useState(false);
 
-  // Drag state for entries
-  const dragEntryRef = useRef<{ entryId: string } | null>(null);
-  const [dragOverKey, setDragOverKey] = useState<string | null>(null);
-  const [optimisticDates, setOptimisticDates] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
   const [entryModal, setEntryModal] = useState<{
     entry: ScheduleEntry;
     date: string;
@@ -85,10 +80,7 @@ export default function SchedulePage() {
 
   const getEntriesForDay = (day: Date, entryList?: ScheduleEntry[]) => {
     const list = entryList ?? entries;
-    return list.filter((e) => {
-      const dateStr = optimisticDates[e.id] ?? e.date;
-      return isSameDay(parseISO(dateStr), day);
-    });
+    return list.filter((e) => isSameDay(parseISO(e.date), day));
   };
 
   const prevPeriod = () => setCurrentDate(subWeeks(currentDate, 1));
@@ -104,7 +96,7 @@ export default function SchedulePage() {
 
   // ── Entry click-to-edit ────────────────────────────────────────────────────
   const openEntryModal = (entry: ScheduleEntry) => {
-    const dateStr = (optimisticDates[entry.id] ?? entry.date).split("T")[0];
+    const dateStr = entry.date.split("T")[0];
     setEntryModal({
       entry,
       date: dateStr,
@@ -144,67 +136,6 @@ export default function SchedulePage() {
     }
   };
 
-  // ── Drag handlers ──────────────────────────────────────────────────────────
-  const handleEntryDragStart = (e: React.DragEvent, entry: ScheduleEntry) => {
-    dragEntryRef.current = { entryId: entry.id };
-    e.dataTransfer.effectAllowed = "move";
-    e.dataTransfer.setData("text/plain", entry.id);
-  };
-
-  // key = dateStr for people view, or `${jobId}:${dateStr}` for jobs view
-  const handleDayDragOver = (e: React.DragEvent, key: string) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    setDragOverKey(key);
-  };
-
-  const handleDayDrop = async (e: React.DragEvent, dateStr: string) => {
-    e.preventDefault();
-    if (!dragEntryRef.current) return;
-    const { entryId } = dragEntryRef.current;
-    dragEntryRef.current = null;
-    setDragOverKey(null);
-
-    // Find the entry to check if date actually changed
-    const entry = entries.find((en) => en.id === entryId);
-    const currentDateStr = (optimisticDates[entryId] ?? entry?.date ?? "").split("T")[0];
-    if (currentDateStr === dateStr) return;
-
-    // Optimistic update
-    setOptimisticDates((prev) => ({ ...prev, [entryId]: dateStr }));
-
-    setSaving(true);
-    try {
-      await fetch(`/api/schedule/${entryId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date: dateStr }),
-      });
-      // Refetch
-      const weekStr = format(weekStart, "yyyy-MM-dd");
-      const url = filterUserId
-        ? `/api/schedule?week=${weekStr}&userId=${filterUserId}`
-        : `/api/schedule?week=${weekStr}`;
-      const d = await fetch(url).then((r) => r.json());
-      setEntries(d);
-    } finally {
-      setSaving(false);
-      setOptimisticDates((prev) => {
-        const next = { ...prev };
-        delete next[entryId];
-        return next;
-      });
-    }
-  };
-
-  const handleDayDragLeave = (e: React.DragEvent) => {
-    // Only clear if leaving the cell entirely (not moving over a child element)
-    const cell = e.currentTarget as HTMLElement;
-    if (!cell.contains(e.relatedTarget as Node)) {
-      setDragOverKey(null);
-    }
-  };
-
   // ── By Jobs grouping ───────────────────────────────────────────────────────
   // All unique jobs in current entries
   const allJobRows = (() => {
@@ -236,19 +167,14 @@ export default function SchedulePage() {
   };
 
   const getEntriesForJobAndDay = (jobId: string, day: Date) =>
-    entries.filter((e) => {
-      const dateStr = optimisticDates[e.id] ?? e.date;
-      return e.job.id === jobId && isSameDay(parseISO(dateStr), day);
-    });
+    entries.filter((e) => e.job.id === jobId && isSameDay(parseISO(e.date), day));
 
   // ── Render entry card ───────────────────────────────────────────────────────
   const renderEntry = (entry: ScheduleEntry, mode: GroupBy) => (
     <div
       key={entry.id}
-      draggable
-      onDragStart={(e) => handleEntryDragStart(e, entry)}
       onClick={(e) => { e.stopPropagation(); openEntryModal(entry); }}
-      className="mb-1.5 p-2 rounded-lg text-white text-xs cursor-pointer hover:opacity-90 active:opacity-75 transition-opacity select-none"
+      className="mb-1.5 p-2 rounded-lg text-white text-xs cursor-pointer hover:opacity-90 active:opacity-75 transition-opacity"
       style={{ backgroundColor: entry.job.color }}
     >
       <p className="font-semibold truncate">
@@ -260,17 +186,11 @@ export default function SchedulePage() {
   );
 
   const renderDayCell = (day: Date, entryList: ScheduleEntry[], mode: GroupBy) => {
-    const dateStr = format(day, "yyyy-MM-dd");
     const isToday = isSameDay(day, new Date());
-    const isDragOver = dragOverKey === dateStr;
-
     return (
       <div
         key={day.toISOString()}
-        className={`p-2 border-r last:border-r-0 border-gray-100 min-h-24 transition-colors ${isToday ? "bg-blue-50/50" : ""} ${isDragOver ? "bg-green-50 ring-2 ring-inset ring-green-300" : ""}`}
-        onDragOver={(e) => handleDayDragOver(e, dateStr)}
-        onDrop={(e) => handleDayDrop(e, dateStr)}
-        onDragLeave={handleDayDragLeave}
+        className={`p-2 border-r last:border-r-0 border-gray-100 min-h-24 ${isToday ? "bg-blue-50/50" : ""}`}
       >
         {entryList.map((entry) => renderEntry(entry, mode))}
       </div>
@@ -288,7 +208,7 @@ export default function SchedulePage() {
               {viewMode === "week"
                 ? `${format(weekStart, "MMM d")} – ${format(weekEnd, "MMM d, yyyy")}`
                 : format(currentDate, "MMMM yyyy")}
-              {saving && <span className="ml-2 text-blue-500 animate-pulse">Saving…</span>}
+
             </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
@@ -456,22 +376,16 @@ export default function SchedulePage() {
                         </Link>
                       </div>
                       {days.map((day) => {
-                        const dateStr = format(day, "yyyy-MM-dd");
                         const dayEntries = getEntriesForJobAndDay(job.id, day);
                         const isToday = isSameDay(day, new Date());
-                        const isDragOver = dragOverKey === dateStr;
                         return (
                           <div key={day.toISOString()}
-                            className={`flex-1 p-2 border-r last:border-r-0 border-gray-100 transition-colors ${isToday ? "bg-blue-50/50" : ""} ${isDragOver ? "bg-green-50 ring-2 ring-inset ring-green-300" : ""}`}
-                            onDragOver={(e) => handleDayDragOver(e, dateStr)}
-                            onDrop={(e) => handleDayDrop(e, dateStr)}
-                            onDragLeave={handleDayDragLeave}
+                            className={`flex-1 p-2 border-r last:border-r-0 border-gray-100 ${isToday ? "bg-blue-50/50" : ""}`}
                           >
                             {dayEntries.map((entry) => (
-                              <div key={entry.id} draggable
-                                onDragStart={(e) => handleEntryDragStart(e, entry)}
+                              <div key={entry.id}
                                 onClick={(e) => { e.stopPropagation(); openEntryModal(entry); }}
-                                className="mb-1.5 p-1.5 rounded-lg text-white text-xs cursor-pointer hover:opacity-90 transition-opacity select-none"
+                                className="mb-1.5 p-1.5 rounded-lg text-white text-xs cursor-pointer hover:opacity-90 transition-opacity"
                                 style={{ backgroundColor: job.color }}
                               >
                                 <p className="font-semibold truncate">{entry.user.name.split(" ")[0]}</p>
@@ -506,18 +420,13 @@ export default function SchedulePage() {
               return (
                 <div key={ws.toISOString()} className="grid grid-cols-7 border-b last:border-b-0 border-gray-100">
                   {weekDays.map((day) => {
-                    const dateStr = format(day, "yyyy-MM-dd");
                     const dayEntries = getEntriesForDay(day);
                     const inMonth = day.getMonth() === currentDate.getMonth();
                     const isToday = isSameDay(day, new Date());
-                    const isDragOver = dragOverKey === dateStr;
                     return (
                       <div
                         key={day.toISOString()}
-                        className={`p-2 border-r last:border-r-0 border-gray-100 min-h-24 transition-colors ${!inMonth ? "bg-gray-50" : ""} ${isToday ? "bg-blue-50/50" : ""} ${isDragOver ? "bg-green-50 ring-2 ring-inset ring-green-300" : ""}`}
-                        onDragOver={(e) => handleDayDragOver(e, dateStr)}
-                        onDrop={(e) => handleDayDrop(e, dateStr)}
-                        onDragLeave={handleDayDragLeave}
+                        className={`p-2 border-r last:border-r-0 border-gray-100 min-h-24 ${!inMonth ? "bg-gray-50" : ""} ${isToday ? "bg-blue-50/50" : ""}`}
                       >
                         <p className={`text-xs font-medium mb-1 ${!inMonth ? "text-gray-300" : isToday ? "text-blue-600 font-bold" : "text-gray-600"}`}>
                           {format(day, "d")}
@@ -525,9 +434,8 @@ export default function SchedulePage() {
                         {dayEntries.slice(0, 3).map((entry) => (
                           <div
                             key={entry.id}
-                            draggable
-                            onDragStart={(ev) => handleEntryDragStart(ev, entry)}
-                            className="mb-0.5 px-1.5 py-0.5 rounded text-white text-xs truncate cursor-grab active:cursor-grabbing hover:opacity-90 select-none"
+                            onClick={(e) => { e.stopPropagation(); openEntryModal(entry); }}
+                            className="mb-0.5 px-1.5 py-0.5 rounded text-white text-xs truncate cursor-pointer hover:opacity-90"
                             style={{ backgroundColor: entry.job.color }}
                           >
                             {groupBy === "people"

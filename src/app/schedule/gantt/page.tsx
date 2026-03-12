@@ -70,7 +70,6 @@ export default function MasterGanttPage() {
   const [jobs, setJobs] = useState<JobWithPhases[]>([]);
   const [loading, setLoading] = useState(true);
   const [popover, setPopover] = useState<{ phase: Phase; jobName: string; x: number; y: number } | null>(null);
-  const [saving, setSaving] = useState(false);
   const [optimisticDates, setOptimisticDates] = useState<Record<string, { startDate: string; endDate: string }>>({});
   const [editModal, setEditModal] = useState<{
     phase: Phase; jobName: string;
@@ -81,32 +80,6 @@ export default function MasterGanttPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const hasScrolledRef = useRef(false);
 
-  // ── Mouse-drag state ──────────────────────────────────────────────────────
-  const dragDataRef = useRef<{
-    phaseId: string;
-    startDate: string;
-    endDate: string;
-    durationDays: number;
-    startMouseX: number;
-    startScrollLeft: number;   // scroll offset at drag-start (for delta calc)
-    barStartLeft: number;      // bar's left px at drag-start
-    barTop: number;
-    barColor: string;
-  } | null>(null);
-  const isDraggingRef = useRef(false);
-  const wasDragRef = useRef(false); // true if mouse moved enough to count as a drag (suppresses click)
-  const dayWidthRef = useRef(DAY_WIDTH);
-  // Stores the last dayIndex shown in the ghost — mouseUp uses this directly so save = what you see
-  const pendingDayIndexRef = useRef<number>(0);
-
-  const [dragPhaseId, setDragPhaseId] = useState<string | null>(null);
-  const [dragGhost, setDragGhost] = useState<{
-    left: number; width: number; top: number; color: string;
-  } | null>(null);
-  const [dragCursorTooltip, setDragCursorTooltip] = useState<{
-    x: number; y: number; newStart: Date; newEnd: Date;
-  } | null>(null);
-
   // Continuous timeline range
   const viewStart = startOfWeek(subWeeks(new Date(), WEEKS_BEFORE), { weekStartsOn: 0 });
   const viewEnd = addDays(addWeeks(viewStart, WEEKS_BEFORE + WEEKS_AFTER), -1);
@@ -116,16 +89,6 @@ export default function MasterGanttPage() {
 
   const todayOffset = differenceInDays(new Date(), viewStart);
   const todayPx = todayOffset * DAY_WIDTH;
-
-  // Stable refs for values used inside window event handlers
-  const viewStartRef = useRef(viewStart);
-  const totalDaysRef = useRef(totalDays);
-
-  // Keep stable refs in sync after every render
-  useEffect(() => {
-    viewStartRef.current = viewStart;
-    totalDaysRef.current = totalDays;
-  });
 
   const fetchData = useCallback(() => {
     fetch("/api/jobs")
@@ -156,93 +119,7 @@ export default function MasterGanttPage() {
     }
   }, [loading, todayPx]);
 
-  // ── Window mouse event handlers (mouse-based drag) ──────────────────────────
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      const drag = dragDataRef.current;
-      if (!drag || !scrollRef.current) return;
 
-      const dw = dayWidthRef.current;
-      const vs = viewStartRef.current;
-      const td = totalDaysRef.current;
-
-      // Delta-based: mouse delta + scroll delta → new bar left → day index
-      const currentScrollLeft = scrollRef.current.scrollLeft;
-      const pixelDelta = (e.clientX - drag.startMouseX) + (currentScrollLeft - drag.startScrollLeft);
-      const newBarLeft = drag.barStartLeft + pixelDelta;
-      const dayIndex = Math.max(0, Math.min(Math.round(newBarLeft / dw), td - 1));
-
-      // Store so mouseUp uses EXACTLY the same value the ghost showed
-      pendingDayIndexRef.current = dayIndex;
-      wasDragRef.current = true; // mouse moved — treat as drag, suppress click
-
-      const newStart = addDays(vs, dayIndex);
-      const newEnd = addDays(newStart, drag.durationDays);
-
-      setDragGhost({
-        left: dayIndex * dw,
-        width: (drag.durationDays + 1) * dw,
-        top: drag.barTop,
-        color: drag.barColor,
-      });
-      setDragCursorTooltip({ x: e.clientX, y: e.clientY, newStart, newEnd });
-    };
-
-    const handleMouseUp = async (_e: MouseEvent) => {
-      const drag = dragDataRef.current;
-      if (!drag) return;
-
-      // Use the last dayIndex the ghost displayed — guaranteed to match what user saw
-      const dayIndex = pendingDayIndexRef.current;
-
-      // Clear drag state synchronously
-      dragDataRef.current = null;
-      isDraggingRef.current = false;
-      setDragPhaseId(null);
-      setDragGhost(null);
-      setDragCursorTooltip(null);
-
-      const vs = viewStartRef.current;
-
-      const newStart = addDays(vs, dayIndex);
-      const newEnd = addDays(newStart, drag.durationDays);
-      const newStartStr = format(newStart, "yyyy-MM-dd");
-      const newEndStr = format(newEnd, "yyyy-MM-dd");
-
-      // Don't make the API call if the date hasn't actually changed
-      if (newStartStr === drag.startDate && newEndStr === drag.endDate) return;
-
-      // Optimistic update
-      setOptimisticDates((prev) => ({
-        ...prev,
-        [drag.phaseId]: { startDate: newStartStr, endDate: newEndStr },
-      }));
-
-      setSaving(true);
-      try {
-        await fetch(`/api/phases/${drag.phaseId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ startDate: newStartStr, endDate: newEndStr }),
-        });
-        fetchData();
-      } finally {
-        setSaving(false);
-        setOptimisticDates((prev) => {
-          const next = { ...prev };
-          delete next[drag.phaseId];
-          return next;
-        });
-      }
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [fetchData]);
 
   const visibleJobs = jobs.filter((j) => j.visible);
 
@@ -338,45 +215,7 @@ export default function MasterGanttPage() {
     return lines;
   };
 
-  // ── Mouse-down on phase bar: start drag ──────────────────────────────────────
-  const handleBarMouseDown = (
-    e: React.MouseEvent,
-    phase: Phase,
-    barTop: number,
-    barColor: string,
-  ) => {
-    if (!phase.startDate || !phase.endDate || !scrollRef.current) return;
-    e.stopPropagation();
-    setPopover(null);
-
-    // Use optimistic dates if a previous drag hasn't saved yet — avoids stale position
-    const effectiveStart = optimisticDates[phase.id]?.startDate ?? phase.startDate;
-    const effectiveEnd = optimisticDates[phase.id]?.endDate ?? phase.endDate;
-    const durationDays = differenceInDays(parseISO(effectiveEnd), parseISO(effectiveStart));
-    // Bar's current left pixel position in the timeline
-    const barStartDay = differenceInDays(parseISO(effectiveStart), viewStartRef.current);
-    const barStartLeft = barStartDay * DAY_WIDTH;
-
-    dragDataRef.current = {
-      phaseId: phase.id,
-      startDate: effectiveStart,
-      endDate: effectiveEnd,
-      durationDays,
-      startMouseX: e.clientX,
-      startScrollLeft: scrollRef.current.scrollLeft,
-      barStartLeft,
-      barTop,
-      barColor,
-    };
-    isDraggingRef.current = true;
-    wasDragRef.current = false;
-    setDragPhaseId(phase.id);
-    // Seed with current bar day so a click-release with no mousemove is a no-op
-    pendingDayIndexRef.current = barStartDay;
-  };
-
   const handleBarClick = (e: React.MouseEvent, phase: Phase, jobName: string) => {
-    if (wasDragRef.current) { wasDragRef.current = false; return; }
     e.stopPropagation();
     setPopover(null);
     const eff = optimisticDates[phase.id];
@@ -438,7 +277,6 @@ export default function MasterGanttPage() {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            {saving && <span className="text-xs text-blue-600 animate-pulse">Saving…</span>}
             <button
               onClick={scrollToToday}
               className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
@@ -718,21 +556,6 @@ export default function MasterGanttPage() {
                       </svg>
                     )}
 
-                    {/* Ghost bar (drag preview) */}
-                    {dragGhost && (
-                      <div
-                        className="absolute rounded border-2 border-blue-400 pointer-events-none"
-                        style={{
-                          top: dragGhost.top,
-                          left: dragGhost.left,
-                          width: Math.max(dragGhost.width, 4),
-                          height: BAR_HEIGHT,
-                          backgroundColor: dragGhost.color + "40",
-                          zIndex: 12,
-                        }}
-                      />
-                    )}
-
                     {/* Phase bars */}
                     {rows.map((row, i) => {
                       if (row.type !== "phase") return null;
@@ -742,32 +565,24 @@ export default function MasterGanttPage() {
                       const rowTop = rowYPositions[i];
                       const barTop = rowTop + (ROW_HEIGHT - BAR_HEIGHT) / 2;
                       if (!bar) return null;
-                      const isBeingDragged = dragPhaseId === phase.id;
 
                       return (
                         <div
                           key={phase.id}
-                          onMouseDown={(e) => handleBarMouseDown(e, phase, barTop, bar.color)}
                           onClick={(e) => handleBarClick(e, phase, job.name)}
                           onMouseEnter={(e) => {
-                            if (!isDraggingRef.current) {
-                              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                              setPopover({ phase, jobName: job.name, x: rect.left, y: rect.bottom + 8 });
-                            }
+                            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                            setPopover({ phase, jobName: job.name, x: rect.left, y: rect.bottom + 8 });
                           }}
-                          onMouseLeave={() => { if (!isDraggingRef.current) setPopover(null); }}
-                          className={`absolute rounded flex items-center px-1.5 text-white text-xs font-medium shadow-sm overflow-hidden select-none transition-opacity ${
-                            isBeingDragged
-                              ? "opacity-40 cursor-grabbing"
-                              : "cursor-grab hover:opacity-90"
-                          }`}
+                          onMouseLeave={() => setPopover(null)}
+                          className="absolute rounded flex items-center px-1.5 text-white text-xs font-medium shadow-sm overflow-hidden cursor-pointer hover:opacity-90 transition-opacity"
                           style={{
                             top: barTop,
                             left: bar.left,
                             width: Math.max(bar.width, 4),
                             height: BAR_HEIGHT,
                             backgroundColor: bar.color,
-                            zIndex: isBeingDragged ? 4 : 8,
+                            zIndex: 8,
                           }}
                         >
                           {bar.width > 40 && <span className="truncate">{phase.name}</span>}
@@ -799,24 +614,11 @@ export default function MasterGanttPage() {
                 <div className="w-2 h-4 rounded-sm bg-blue-400/70" />
                 <span className="text-xs text-gray-500">Today</span>
               </div>
-              <span className="text-xs text-gray-400 italic">Drag bars to reschedule</span>
+              <span className="text-xs text-gray-400 italic">Click a bar to edit dates</span>
             </div>
           </div>
         )}
       </div>
-
-      {/* Drag cursor tooltip (floating near mouse) */}
-      {dragCursorTooltip && (
-        <div
-          className="fixed z-50 pointer-events-none bg-gray-900 text-white text-xs px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap"
-          style={{
-            top: dragCursorTooltip.y - 48,
-            left: dragCursorTooltip.x + 14,
-          }}
-        >
-          → {format(dragCursorTooltip.newStart, "MMM d")} – {format(dragCursorTooltip.newEnd, "MMM d, yyyy")}
-        </div>
-      )}
 
       {/* Edit dates modal */}
       {editModal && (

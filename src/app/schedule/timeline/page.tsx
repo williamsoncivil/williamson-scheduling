@@ -114,35 +114,7 @@ export default function TimelinePage() {
     y: number;
   } | null>(null);
 
-  // ── Mouse-drag state ──────────────────────────────────────────────────────
-  const dragDataRef = useRef<{
-    phaseId: string;
-    jobId: string;
-    startDate: string;
-    endDate: string;
-    durationDays: number;
-    startMouseX: number;
-    barTop: number;
-    barColor: string;
-  } | null>(null);
-  const isDraggingRef = useRef(false);
-  const wasDragRef = useRef(false);
-
-  // Stable refs for values used inside window event handlers
-  const dayWidthRef = useRef(getDayWidth(DEFAULT_WEEK_RANGE));
-  const viewStartRef = useRef(startOfWeek(new Date(), { weekStartsOn: 0 }));
-  const totalDaysRef = useRef(0);
-
-  const [dragPhaseId, setDragPhaseId] = useState<string | null>(null);
-  const [dragGhost, setDragGhost] = useState<{
-    left: number; width: number; top: number; color: string;
-  } | null>(null);
-  const [dragCursorTooltip, setDragCursorTooltip] = useState<{
-    x: number; y: number; newStart: Date; newEnd: Date;
-  } | null>(null);
-
   const [optimisticDates, setOptimisticDates] = useState<Record<string, { startDate: string; endDate: string }>>({});
-  const [saving, setSaving] = useState(false);
   const [editModal, setEditModal] = useState<{
     phase: Phase; jobName: string;
     startDate: string; endDate: string;
@@ -150,7 +122,6 @@ export default function TimelinePage() {
   } | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const gridRef = useRef<HTMLDivElement>(null);
 
   const fetchData = useCallback(() => {
     fetch("/api/schedule/timeline")
@@ -173,108 +144,7 @@ export default function TimelinePage() {
 
   const stepWeeks = Math.max(1, Math.floor(weekRange / 2));
 
-  // Keep stable refs in sync after every render
-  useEffect(() => {
-    dayWidthRef.current = dayWidth;
-    viewStartRef.current = viewStart;
-    totalDaysRef.current = totalDays;
-  });
 
-  // ── Window mouse event handlers (mouse-based drag) ──────────────────────────
-  useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      const drag = dragDataRef.current;
-      if (!drag || !scrollRef.current) return;
-
-      const dw = dayWidthRef.current;
-      const vs = viewStartRef.current;
-      const td = totalDaysRef.current;
-
-      // Re-fetch rect on every mousemove so scroll changes are accounted for
-      const containerRect = scrollRef.current.getBoundingClientRect();
-      const scrollLeft = scrollRef.current.scrollLeft;
-      // scrollRef starts after the sticky sidebar, so no SIDEBAR_WIDTH subtraction needed
-      const relativeX = e.clientX - containerRect.left + scrollLeft;
-      const dayIndex = Math.max(0, Math.min(Math.floor(relativeX / dw), td - 1));
-
-      const newStart = addDays(vs, dayIndex);
-      const newEnd = addDays(newStart, drag.durationDays);
-
-      wasDragRef.current = true;
-      setDragGhost({
-        left: dayIndex * dw,
-        width: (drag.durationDays + 1) * dw,
-        top: drag.barTop,
-        color: drag.barColor,
-      });
-      setDragCursorTooltip({ x: e.clientX, y: e.clientY, newStart, newEnd });
-    };
-
-    const handleMouseUp = async (e: MouseEvent) => {
-      const drag = dragDataRef.current;
-      if (!drag) return;
-
-      const deltaX = e.clientX - drag.startMouseX;
-
-      // Clear drag state synchronously
-      dragDataRef.current = null;
-      isDraggingRef.current = false;
-      setDragPhaseId(null);
-      setDragGhost(null);
-      setDragCursorTooltip(null);
-
-      // Ignore tiny moves (click vs drag threshold)
-      if (Math.abs(deltaX) < 5) return;
-      if (!scrollRef.current) return;
-
-      const dw = dayWidthRef.current;
-      const vs = viewStartRef.current;
-      const td = totalDaysRef.current;
-
-      const containerRect = scrollRef.current.getBoundingClientRect();
-      const scrollLeft = scrollRef.current.scrollLeft;
-      const relativeX = e.clientX - containerRect.left + scrollLeft;
-      const dayIndex = Math.max(0, Math.min(Math.floor(relativeX / dw), td - 1));
-
-      const newStart = addDays(vs, dayIndex);
-      const newEnd = addDays(newStart, drag.durationDays);
-      const newStartStr = format(newStart, "yyyy-MM-dd");
-      const newEndStr = format(newEnd, "yyyy-MM-dd");
-
-      // Don't make the API call if the date hasn't actually changed
-      if (newStartStr === drag.startDate && newEndStr === drag.endDate) return;
-
-      // Optimistic update
-      setOptimisticDates((prev) => ({
-        ...prev,
-        [drag.phaseId]: { startDate: newStartStr, endDate: newEndStr },
-      }));
-
-      setSaving(true);
-      try {
-        await fetch(`/api/phases/${drag.phaseId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ startDate: newStartStr, endDate: newEndStr }),
-        });
-        fetchData();
-      } finally {
-        setSaving(false);
-        setOptimisticDates((prev) => {
-          const next = { ...prev };
-          delete next[drag.phaseId];
-          return next;
-        });
-      }
-    };
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [fetchData]); // fetchData is stable via useCallback
 
   // ── Navigation ──────────────────────────────────────────────────────────────
   const prev = () => setCurrentDate((d) => subWeeks(d, stepWeeks));
@@ -300,41 +170,8 @@ export default function TimelinePage() {
 
   // ── Tooltip handler ──────────────────────────────────────────────────────────
   const handleBarMouseEnter = (e: React.MouseEvent, phase: Phase, job: Job) => {
-    if (isDraggingRef.current) return;
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     setTooltip({ phase, job, x: rect.left, y: rect.bottom + 8 });
-  };
-
-  // ── Mouse-down on phase bar: start drag ──────────────────────────────────────
-  const handleBarMouseDown = (
-    e: React.MouseEvent,
-    phase: Phase,
-    job: Job,
-    barTop: number,
-    barColor: string,
-  ) => {
-    if (!phase.startDate || !phase.endDate) return;
-    e.stopPropagation();
-
-    const eff = optimisticDates[phase.id];
-    const effectiveStart = eff?.startDate ?? phase.startDate;
-    const effectiveEnd = eff?.endDate ?? phase.endDate;
-    const durationDays = differenceInDays(parseISO(effectiveEnd), parseISO(effectiveStart));
-
-    dragDataRef.current = {
-      phaseId: phase.id,
-      jobId: job.id,
-      startDate: effectiveStart,
-      endDate: effectiveEnd,
-      durationDays,
-      startMouseX: e.clientX,
-      barTop,
-      barColor,
-    };
-    isDraggingRef.current = true;
-    wasDragRef.current = false;
-    setDragPhaseId(phase.id);
-    setTooltip(null);
   };
 
   const saveEditModal = async () => {
@@ -382,7 +219,7 @@ export default function TimelinePage() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
             <h1 className="text-xl font-bold text-gray-900">People Timeline</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Jobs as rows · phases colored by assigned person · drag to reschedule</p>
+            <p className="text-sm text-gray-500 mt-0.5">Jobs as rows · phases colored by assigned person · click to edit dates</p>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -448,9 +285,7 @@ export default function TimelinePage() {
               <div className="w-3 h-3 rounded-sm bg-slate-300 shrink-0" />
               <span className="text-xs text-gray-500">Unassigned</span>
             </div>
-            {saving && (
-              <span className="ml-auto text-xs text-blue-600 animate-pulse">Saving…</span>
-            )}
+
           </div>
         )}
 
@@ -517,7 +352,6 @@ export default function TimelinePage() {
 
                   {/* Grid body */}
                   <div
-                    ref={gridRef}
                     className="relative"
                     style={{ height: ROW_HEIGHT * jobsWithPhases.length, width: Math.max(timelineWidth, 100) }}
                   >
@@ -533,21 +367,6 @@ export default function TimelinePage() {
                       <div
                         className="absolute top-0 bottom-0 w-px bg-blue-400/60 pointer-events-none"
                         style={{ left: todayOffset * dayWidth, zIndex: 6 }}
-                      />
-                    )}
-
-                    {/* Ghost bar (drag preview position) */}
-                    {dragGhost && (
-                      <div
-                        className="absolute rounded border-2 border-blue-400 pointer-events-none"
-                        style={{
-                          top: dragGhost.top,
-                          left: dragGhost.left,
-                          width: Math.max(dragGhost.width, 4),
-                          height: BAR_HEIGHT,
-                          backgroundColor: dragGhost.color + "40",
-                          zIndex: 12,
-                        }}
                       />
                     )}
 
@@ -574,30 +393,21 @@ export default function TimelinePage() {
                             const primaryWorker = workers[0] ?? null;
                             const barColor = primaryWorker ? getUserColor(primaryWorker.id, allWorkers) : "#cbd5e1";
                             const extraWorkers = workers.slice(1);
-                            const isBeingDragged = dragPhaseId === phase.id;
-
                             return (
                               <div
                                 key={phase.id}
-                                onMouseDown={(e) => handleBarMouseDown(e, phase, job, barTop, barColor)}
-                                className={`absolute rounded text-white text-xs font-medium shadow-sm overflow-hidden flex items-center gap-1 px-1.5 select-none group transition-opacity ${
-                                  isBeingDragged
-                                    ? "opacity-40 cursor-grabbing"
-                                    : "cursor-grab hover:opacity-90"
-                                }`}
+                                className="absolute rounded text-white text-xs font-medium shadow-sm overflow-hidden flex items-center gap-1 px-1.5 cursor-pointer hover:opacity-90 transition-opacity"
                                 style={{
                                   top: barTop,
                                   left: bar.left,
                                   width: Math.max(bar.width, 4),
                                   height: BAR_HEIGHT,
                                   backgroundColor: barColor,
-                                  zIndex: isBeingDragged ? 4 : 8,
+                                  zIndex: 8,
                                 }}
                                 onMouseEnter={(e) => handleBarMouseEnter(e, phase, job)}
-                                onMouseLeave={() => { if (!isDraggingRef.current) setTooltip(null); }}
-                                onMouseUp={(e) => {
-                                  // fires before window mouseup clears drag state — reliable click detection
-                                  if (wasDragRef.current) return;
+                                onMouseLeave={() => setTooltip(null)}
+                                onClick={(e) => {
                                   e.stopPropagation();
                                   const eff = optimisticDates[phase.id];
                                   setEditModal({
@@ -607,7 +417,6 @@ export default function TimelinePage() {
                                     saving: false, error: "",
                                   });
                                 }}
-                                onClick={(e) => e.stopPropagation()}
                               >
                                 {bar.width > 50 && (
                                   <span className="truncate text-[11px] font-semibold drop-shadow-sm">
@@ -648,18 +457,6 @@ export default function TimelinePage() {
           </div>
         )}
 
-        {/* Drag cursor tooltip (floating near mouse) */}
-        {dragCursorTooltip && (
-          <div
-            className="fixed z-50 pointer-events-none bg-gray-900 text-white text-xs px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap"
-            style={{
-              top: dragCursorTooltip.y - 48,
-              left: dragCursorTooltip.x + 14,
-            }}
-          >
-            → {format(dragCursorTooltip.newStart, "MMM d")} – {format(dragCursorTooltip.newEnd, "MMM d, yyyy")}
-          </div>
-        )}
       </div>
 
       {/* Edit dates modal */}
@@ -774,7 +571,7 @@ export default function TimelinePage() {
           ) : (
             <p className="text-xs text-gray-400 italic">No workers assigned</p>
           )}
-          <p className="text-xs text-gray-400 mt-2 italic">Drag bar to reschedule</p>
+          <p className="text-xs text-gray-400 mt-2 italic">Click bar to edit dates</p>
         </div>
       )}
     </Layout>
