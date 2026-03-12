@@ -14,10 +14,14 @@ export async function GET() {
 
   const since = user?.messagesLastReadAt ?? new Date(0);
 
-  const count = await prisma.message.count({
+  // Count messages where this user was @mentioned after their last read
+  const count = await prisma.messageMention.count({
     where: {
-      createdAt: { gt: since },
-      authorId: { not: session.user.id }, // don't count your own messages
+      userId: session.user.id,
+      message: {
+        createdAt: { gt: since },
+        authorId: { not: session.user.id },
+      },
     },
   });
 

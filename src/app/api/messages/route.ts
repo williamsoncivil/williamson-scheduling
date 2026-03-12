@@ -20,6 +20,7 @@ export async function GET(req: NextRequest) {
       author: { select: { id: true, name: true, role: true } },
       job: { select: { id: true, name: true, color: true } },
       phase: { select: { id: true, name: true } },
+      mentions: { include: { user: { select: { id: true, name: true } } } },
     },
     orderBy: { createdAt: "desc" },
     take: 200,
@@ -37,17 +38,36 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Content and jobId required" }, { status: 400 });
   }
 
+  // Parse @mentions: match @Name or @First Last (two words)
+  const allUsers = await prisma.user.findMany({ select: { id: true, name: true } });
+  const mentionedUserIds: string[] = [];
+
+  // Sort by name length desc so "John Smith" matches before "John"
+  const sorted = [...allUsers].sort((a, b) => b.name.length - a.name.length);
+  const contentLower = content.toLowerCase();
+  for (const user of sorted) {
+    if (contentLower.includes(`@${user.name.toLowerCase()}`)) {
+      if (!mentionedUserIds.includes(user.id) && user.id !== session.user.id) {
+        mentionedUserIds.push(user.id);
+      }
+    }
+  }
+
   const message = await prisma.message.create({
     data: {
       content: content.trim(),
       authorId: session.user.id,
       jobId,
       phaseId: phaseId || null,
+      mentions: mentionedUserIds.length > 0 ? {
+        create: mentionedUserIds.map((userId) => ({ userId })),
+      } : undefined,
     },
     include: {
       author: { select: { id: true, name: true, role: true } },
       job: { select: { id: true, name: true, color: true } },
       phase: { select: { id: true, name: true } },
+      mentions: { include: { user: { select: { id: true, name: true } } } },
     },
   });
 
