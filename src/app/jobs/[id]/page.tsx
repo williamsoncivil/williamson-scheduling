@@ -6,21 +6,68 @@ import { useSession } from "next-auth/react";
 import Layout from "@/components/Layout";
 import CopyJobModal from "@/components/CopyJobModal";
 import Link from "next/link";
-import { format, parseISO, differenceInDays, addDays } from "date-fns";
+import { format, parseISO, addDays } from "date-fns";
 
 const DURATION_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 10, 14, 21, 28, 30, 45, 60, 90];
 
-function endFromDuration(start: string, days: number): string {
-  try { return format(addDays(parseISO(start), days - 1), "yyyy-MM-dd"); }
-  catch { return ""; }
+// ── Business-day helpers (client-side, local time) ───────────────────────────
+
+function isWeekendLocal(date: Date): boolean {
+  const dow = date.getDay();
+  return dow === 0 || dow === 6;
 }
 
+/** Advance date to the next weekday (local time). */
+function snapToWeekday(date: Date): Date {
+  let d = new Date(date);
+  while (isWeekendLocal(d)) d = addDays(d, 1);
+  return d;
+}
+
+/**
+ * Calculate end date given a start and a number of *business* days.
+ * Day 1 = start day itself (if a weekday). Weekends are skipped over.
+ */
+function endFromDuration(start: string, days: number): string {
+  try {
+    let d = snapToWeekday(parseISO(start));
+    let remaining = days - 1;
+    while (remaining > 0) {
+      d = addDays(d, 1);
+      if (!isWeekendLocal(d)) remaining--;
+    }
+    return format(d, "yyyy-MM-dd");
+  } catch { return ""; }
+}
+
+/** Count business days between two date strings (inclusive). */
 function durationFromDates(start: string, end: string): number | null {
   try {
-    const d = differenceInDays(parseISO(end), parseISO(start)) + 1;
-    return d > 0 ? d : null;
+    const endDate = parseISO(end);
+    let d = parseISO(start);
+    if (endDate < d) return null;
+    let count = 0;
+    while (d <= endDate) {
+      if (!isWeekendLocal(d)) count++;
+      d = addDays(d, 1);
+    }
+    return count > 0 ? count : null;
   } catch { return null; }
 }
+
+/**
+ * Return the next business day AFTER the given date string
+ * (used to auto-fill start date from a predecessor's end date).
+ */
+function nextBusinessDayAfter(dateStr: string): string {
+  try {
+    let d = addDays(parseISO(dateStr), 1);
+    while (isWeekendLocal(d)) d = addDays(d, 1);
+    return format(d, "yyyy-MM-dd");
+  } catch { return ""; }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 type TabId = "overview" | "phases" | "schedule" | "files" | "messages" | "production";
 
@@ -162,6 +209,7 @@ export default function JobDetailPage() {
   const [newPhaseDesc, setNewPhaseDesc] = useState("");
   const [newPhaseStart, setNewPhaseStart] = useState("");
   const [newPhaseDuration, setNewPhaseDuration] = useState<number | "">(7);
+  const [newPhasePredecessorId, setNewPhasePredecessorId] = useState("");
   const [editingPhaseId, setEditingPhaseId] = useState<string | null>(null);
   const [phaseEditStart, setPhaseEditStart] = useState("");
   const [phaseEditEnd, setPhaseEditEnd] = useState("");
@@ -177,6 +225,16 @@ export default function JobDetailPage() {
   const [depType, setDepType] = useState<"FINISH_TO_START" | "START_TO_START" | "FINISH_TO_FINISH" | "START_TO_FINISH">("FINISH_TO_START");
   const [depLagDays, setDepLagDays] = useState(0);
   const [savingDep, setSavingDep] = useState(false);
+  // Edit existing predecessor
+  const [editDepModal, setEditDepModal] = useState<{
+    phaseId: string;
+    phaseName: string;
+    predecessorId: string;
+    predecessorName: string;
+  } | null>(null);
+  const [editDepType, setEditDepType] = useState<"FINISH_TO_START" | "START_TO_START" | "FINISH_TO_FINISH" | "START_TO_FINISH">("FINISH_TO_START");
+  const [editDepLagDays, setEditDepLagDays] = useState(0);
+  const [savingEditDep, setSavingEditDep] = useState(false);
 
   // Cascade toast
   const [cascadeToast, setCascadeToast] = useState<{ count: number; phases: Array<{ name: string; startDate: string | null; endDate: string | null }> } | null>(null);
@@ -330,15 +388,25 @@ export default function JobDetailPage() {
     if (!newPhaseName) return;
     const startDate = newPhaseStart || null;
     const endDate = (startDate && newPhaseDuration) ? endFromDuration(startDate, Number(newPhaseDuration)) : null;
-    await fetch(`/api/jobs/${jobId}/phases`, {
+    const res = await fetch(`/api/jobs/${jobId}/phases`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: newPhaseName, description: newPhaseDesc, startDate, endDate }),
     });
+    if (res.ok && newPhasePredecessorId) {
+      const created = await res.json();
+      // Auto-create a FINISH_TO_START dependency with the selected predecessor
+      await fetch(`/api/phases/${created.id}/dependencies`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ predecessorId: newPhasePredecessorId, type: "FINISH_TO_START", lagDays: 0 }),
+      });
+    }
     setNewPhaseName("");
     setNewPhaseDesc("");
     setNewPhaseStart("");
     setNewPhaseDuration(7);
+    setNewPhasePredecessorId("");
     fetchJob();
   };
 
@@ -484,6 +552,43 @@ export default function JobDetailPage() {
       fetchJob();
     } finally {
       setSavingDep(false);
+    }
+  };
+
+  const openEditDepModal = (phase: Phase, dep: PhaseDependency) => {
+    setEditDepModal({
+      phaseId: phase.id,
+      phaseName: phase.name,
+      predecessorId: dep.predecessorId,
+      predecessorName: dep.predecessor?.name ?? dep.predecessorId,
+    });
+    setEditDepType(dep.type);
+    setEditDepLagDays(dep.lagDays);
+  };
+
+  const saveEditDependency = async () => {
+    if (!editDepModal) return;
+    setSavingEditDep(true);
+    try {
+      // The POST endpoint uses upsert, so re-posting with the same predecessorId updates type/lagDays
+      const res = await fetch(`/api/phases/${editDepModal.phaseId}/dependencies`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          predecessorId: editDepModal.predecessorId,
+          type: editDepType,
+          lagDays: editDepLagDays,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.error || "Failed to update dependency");
+        return;
+      }
+      setEditDepModal(null);
+      fetchJob();
+    } finally {
+      setSavingEditDep(false);
     }
   };
 
@@ -984,14 +1089,28 @@ export default function JobDetailPage() {
                                     <span className="font-medium">{d.predecessor?.name}</span>
                                     {" "}
                                     <span className="text-gray-400">({depTypeLabel(d.type)}{d.lagDays > 0 ? ` + ${d.lagDays}d` : ""})</span>
+                                    {d.predecessor?.endDate && (
+                                      <span className="text-gray-400 ml-1">
+                                        · ends {format(parseISO(d.predecessor.endDate.split("T")[0]), "MMM d")}
+                                      </span>
+                                    )}
                                   </span>
-                                  <button
-                                    onClick={() => removeDependency(phase.id, d.predecessorId)}
-                                    className="text-red-400 hover:text-red-600 ml-2 shrink-0"
-                                    title="Remove dependency"
-                                  >
-                                    ✕
-                                  </button>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                      onClick={() => openEditDepModal(phase, d)}
+                                      className="text-blue-500 hover:text-blue-700 font-medium"
+                                      title="Edit dependency"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={() => removeDependency(phase.id, d.predecessorId)}
+                                      className="text-red-400 hover:text-red-600"
+                                      title="Remove dependency"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -1068,12 +1187,29 @@ export default function JobDetailPage() {
                               <label className="block text-xs font-medium text-gray-600 mb-1">Depends On (phase that must finish first)</label>
                               <select
                                 value={phaseEditDependsOn}
-                                onChange={(e) => setPhaseEditDependsOn(e.target.value)}
+                                onChange={(e) => {
+                                  const predId = e.target.value;
+                                  setPhaseEditDependsOn(predId);
+                                  // Auto-fill start date from predecessor's end date
+                                  if (predId) {
+                                    const pred = phases.find((p) => p.id === predId);
+                                    if (pred?.endDate) {
+                                      const suggestedStart = nextBusinessDayAfter(pred.endDate.split("T")[0]);
+                                      setPhaseEditStart(suggestedStart);
+                                      if (phaseEditDuration) {
+                                        setPhaseEditEnd(endFromDuration(suggestedStart, Number(phaseEditDuration)));
+                                      }
+                                    }
+                                  }
+                                }}
                                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                               >
                                 <option value="">— No dependency —</option>
                                 {phases.filter((p) => p.id !== phase.id).map((p) => (
-                                  <option key={p.id} value={p.id}>{p.name}</option>
+                                  <option key={p.id} value={p.id}>
+                                    {p.name}
+                                    {p.endDate ? ` (ends ${format(parseISO(p.endDate.split("T")[0]), "MMM d")})` : ""}
+                                  </option>
                                 ))}
                               </select>
                             </div>
@@ -1113,7 +1249,7 @@ export default function JobDetailPage() {
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Duration (days)</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Duration (working days)</label>
                     <select value={newPhaseDuration}
                       onChange={(e) => setNewPhaseDuration(e.target.value ? Number(e.target.value) : "")}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
@@ -1122,9 +1258,41 @@ export default function JobDetailPage() {
                     </select>
                   </div>
                 </div>
+                {/* Predecessor selector – auto-fills start date */}
+                {phases.length > 0 && (
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Predecessor <span className="text-gray-400">(auto-fills start date)</span></label>
+                    <select
+                      value={newPhasePredecessorId}
+                      onChange={(e) => {
+                        const predId = e.target.value;
+                        setNewPhasePredecessorId(predId);
+                        if (predId) {
+                          const pred = phases.find((p) => p.id === predId);
+                          if (pred?.endDate) {
+                            const suggested = nextBusinessDayAfter(pred.endDate.split("T")[0]);
+                            setNewPhaseStart(suggested);
+                          }
+                        }
+                      }}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">— None —</option>
+                      {phases.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                          {p.endDate ? ` (ends ${format(parseISO(p.endDate.split("T")[0]), "MMM d")})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
                 {newPhaseStart && newPhaseDuration && (
                   <p className="text-xs text-blue-600">
-                    End: {format(addDays(parseISO(newPhaseStart), Number(newPhaseDuration) - 1), "MMM d, yyyy")}
+                    End: {endFromDuration(newPhaseStart, Number(newPhaseDuration))
+                      ? format(parseISO(endFromDuration(newPhaseStart, Number(newPhaseDuration))), "MMM d, yyyy")
+                      : "—"}
+                    {" "}(skips weekends)
                   </p>
                 )}
                 <button type="submit" className="bg-blue-600 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-700">
@@ -1611,9 +1779,25 @@ export default function JobDetailPage() {
                 >
                   <option value="">— Select a phase —</option>
                   {phases.filter((p) => p.id !== addDepModal.phaseId).map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                      {p.endDate ? ` (ends ${format(parseISO(p.endDate.split("T")[0]), "MMM d")})` : ""}
+                    </option>
                   ))}
                 </select>
+                {/* Show suggested start date */}
+                {depPredecessorId && (() => {
+                  const pred = phases.find((p) => p.id === depPredecessorId);
+                  if (pred?.endDate && depType === "FINISH_TO_START") {
+                    const suggested = nextBusinessDayAfter(pred.endDate.split("T")[0]);
+                    return (
+                      <p className="text-xs text-blue-600 mt-1">
+                        📅 Suggested start: <strong>{format(parseISO(suggested), "EEE, MMM d, yyyy")}</strong> (next business day after predecessor ends)
+                      </p>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
 
               <div>
@@ -1639,7 +1823,7 @@ export default function JobDetailPage() {
                   onChange={(e) => setDepLagDays(parseInt(e.target.value) || 0)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <p className="text-xs text-gray-400 mt-1">Days to wait after the dependency condition is met</p>
+                <p className="text-xs text-gray-400 mt-1">Business days to wait after the dependency condition is met</p>
               </div>
             </div>
 
@@ -1656,6 +1840,78 @@ export default function JobDetailPage() {
                 className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
               >
                 {savingDep ? "Saving..." : "Add Dependency"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Predecessor Modal */}
+      {editDepModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-1">Edit Predecessor</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              Editing dependency from <strong>{editDepModal.predecessorName}</strong> → <strong>{editDepModal.phaseName}</strong>
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Dependency Type</label>
+                <select
+                  value={editDepType}
+                  onChange={(e) => setEditDepType(e.target.value as typeof editDepType)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="FINISH_TO_START">Finish → Start (most common)</option>
+                  <option value="START_TO_START">Start → Start</option>
+                  <option value="FINISH_TO_FINISH">Finish → Finish</option>
+                  <option value="START_TO_FINISH">Start → Finish (rare)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Lag Days</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={editDepLagDays}
+                  onChange={(e) => setEditDepLagDays(parseInt(e.target.value) || 0)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">Business days to wait after the dependency condition is met</p>
+              </div>
+
+              {/* Show suggested start date for FINISH_TO_START */}
+              {editDepType === "FINISH_TO_START" && (() => {
+                const pred = phases.find((p) => p.id === editDepModal.predecessorId);
+                if (pred?.endDate) {
+                  const suggested = nextBusinessDayAfter(pred.endDate.split("T")[0]);
+                  return (
+                    <div className="bg-blue-50 rounded-lg p-3 text-xs text-blue-700">
+                      📅 <strong>{editDepModal.phaseName}</strong> should start on{" "}
+                      <strong>{format(parseISO(suggested), "EEE, MMM d, yyyy")}</strong>
+                      {editDepLagDays > 0 && ` + ${editDepLagDays} lag day(s)`}
+                    </div>
+                  );
+                }
+                return null;
+              })()}
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setEditDepModal(null)}
+                className="flex-1 border border-gray-300 text-gray-700 py-2 px-4 rounded-lg text-sm hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveEditDependency}
+                disabled={savingEditDep}
+                className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                {savingEditDep ? "Saving..." : "Save Changes"}
               </button>
             </div>
           </div>

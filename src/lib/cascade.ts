@@ -8,10 +8,55 @@ export interface CascadedPhase {
   endDate: string | null;
 }
 
+// ─── Business-day helpers (UTC-safe for server-side Prisma dates) ─────────────
+
+function isWeekendUTC(date: Date): boolean {
+  const dow = date.getUTCDay();
+  return dow === 0 || dow === 6;
+}
+
+/** Advance date forward until it lands on a weekday (UTC). */
+function snapToWeekdayUTC(date: Date): Date {
+  let d = new Date(date);
+  while (isWeekendUTC(d)) {
+    d = addDays(d, 1);
+  }
+  return d;
+}
+
+/**
+ * Add `n` business days to a date (UTC). Day 1 counts as the start date itself.
+ * If the start date is a weekend it is first snapped to the next weekday.
+ */
+function addBusinessDaysUTC(date: Date, n: number): Date {
+  let d = snapToWeekdayUTC(new Date(date));
+  let remaining = n - 1;
+  while (remaining > 0) {
+    d = addDays(d, 1);
+    if (!isWeekendUTC(d)) remaining--;
+  }
+  return d;
+}
+
+/** Count business days between two dates (inclusive, UTC). Returns null if end < start. */
+function countBusinessDaysUTC(start: Date, end: Date): number | null {
+  if (end < start) return null;
+  let count = 0;
+  const d = new Date(start);
+  while (d <= end) {
+    if (!isWeekendUTC(d)) count++;
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return count > 0 ? count : null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
  * Cascade phase date changes to all successor phases via PhaseDependency relations.
  * Uses BFS to avoid infinite loops.
  * Only shifts phases FORWARD (does not pull dates earlier).
+ * Durations are preserved in business days; new start/end dates skip weekends.
  */
 export async function cascadePhaseUpdate(
   phaseId: string,
@@ -44,9 +89,10 @@ export async function cascadePhaseUpdate(
       const successor = dep.successor;
       if (!successor.startDate && !successor.endDate) continue; // Skip phases with no dates
 
-      const duration =
+      // Preserve duration in business days (skips weekends)
+      const businessDayDuration =
         successor.startDate && successor.endDate
-          ? successor.endDate.getTime() - successor.startDate.getTime()
+          ? countBusinessDaysUTC(successor.startDate, successor.endDate)
           : null;
 
       let newSuccessorStart: Date | null = successor.startDate;
@@ -56,13 +102,13 @@ export async function cascadePhaseUpdate(
         case "FINISH_TO_START": {
           // successor starts when predecessor finishes + lag
           if (current.newEnd) {
-            const proposed = addDays(current.newEnd, dep.lagDays);
+            let proposed = addDays(current.newEnd, dep.lagDays);
+            proposed = snapToWeekdayUTC(proposed); // skip weekends
             // Only shift forward
             if (!newSuccessorStart || proposed > newSuccessorStart) {
               newSuccessorStart = proposed;
-              // Preserve duration
-              if (duration !== null) {
-                newSuccessorEnd = new Date(newSuccessorStart.getTime() + duration);
+              if (businessDayDuration !== null) {
+                newSuccessorEnd = addBusinessDaysUTC(newSuccessorStart, businessDayDuration);
               }
             }
           }
@@ -71,11 +117,12 @@ export async function cascadePhaseUpdate(
         case "START_TO_START": {
           // successor starts when predecessor starts + lag
           if (current.newStart) {
-            const proposed = addDays(current.newStart, dep.lagDays);
+            let proposed = addDays(current.newStart, dep.lagDays);
+            proposed = snapToWeekdayUTC(proposed);
             if (!newSuccessorStart || proposed > newSuccessorStart) {
               newSuccessorStart = proposed;
-              if (duration !== null) {
-                newSuccessorEnd = new Date(newSuccessorStart.getTime() + duration);
+              if (businessDayDuration !== null) {
+                newSuccessorEnd = addBusinessDaysUTC(newSuccessorStart, businessDayDuration);
               }
             }
           }
@@ -84,12 +131,20 @@ export async function cascadePhaseUpdate(
         case "FINISH_TO_FINISH": {
           // successor finishes when predecessor finishes + lag
           if (current.newEnd) {
-            const proposed = addDays(current.newEnd, dep.lagDays);
+            let proposed = addDays(current.newEnd, dep.lagDays);
+            proposed = snapToWeekdayUTC(proposed);
             if (!newSuccessorEnd || proposed > newSuccessorEnd) {
               newSuccessorEnd = proposed;
-              // Preserve duration (shift start back)
-              if (duration !== null) {
-                newSuccessorStart = new Date(newSuccessorEnd.getTime() - duration);
+              // Preserve duration (shift start back by business days)
+              if (businessDayDuration !== null && newSuccessorEnd) {
+                // Walk backward to find start
+                let d = new Date(newSuccessorEnd);
+                let remaining = businessDayDuration - 1;
+                while (remaining > 0) {
+                  d = addDays(d, -1);
+                  if (!isWeekendUTC(d)) remaining--;
+                }
+                newSuccessorStart = snapToWeekdayUTC(d);
               }
             }
           }
@@ -98,11 +153,18 @@ export async function cascadePhaseUpdate(
         case "START_TO_FINISH": {
           // successor finishes when predecessor starts + lag (rare)
           if (current.newStart) {
-            const proposed = addDays(current.newStart, dep.lagDays);
+            let proposed = addDays(current.newStart, dep.lagDays);
+            proposed = snapToWeekdayUTC(proposed);
             if (!newSuccessorEnd || proposed > newSuccessorEnd) {
               newSuccessorEnd = proposed;
-              if (duration !== null) {
-                newSuccessorStart = new Date(newSuccessorEnd.getTime() - duration);
+              if (businessDayDuration !== null && newSuccessorEnd) {
+                let d = new Date(newSuccessorEnd);
+                let remaining = businessDayDuration - 1;
+                while (remaining > 0) {
+                  d = addDays(d, -1);
+                  if (!isWeekendUTC(d)) remaining--;
+                }
+                newSuccessorStart = snapToWeekdayUTC(d);
               }
             }
           }
