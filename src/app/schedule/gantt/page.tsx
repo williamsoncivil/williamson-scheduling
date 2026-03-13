@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Layout from "@/components/Layout";
+import { PhaseModalTabs } from "@/components/PhaseModalTabs";
 import Link from "next/link";
 const DURATION_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 10, 14, 21, 28, 30, 45, 60, 90];
 
@@ -761,7 +762,7 @@ export default function MasterGanttPage() {
                 </div>
               )}
             {editModal.error && <p className="text-xs text-red-500 mb-3">{editModal.error}</p>}
-            <div className="flex gap-2">
+            <div className="flex gap-2 mb-2">
               <button
                 onClick={saveEditModal}
                 disabled={editModal.saving || !editModal.startDate || !editModal.endDate}
@@ -776,6 +777,7 @@ export default function MasterGanttPage() {
                 Cancel
               </button>
             </div>
+            <PhaseModalTabs phaseId={editModal.phase.id} jobId={editModal.jobId} />
           </div>
         </div>
       )}

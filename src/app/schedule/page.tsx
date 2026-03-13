@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import Layout from "@/components/Layout";
+import { PhaseModalTabs } from "@/components/PhaseModalTabs";
 import Link from "next/link";
 import {
   format,
@@ -680,7 +681,7 @@ export default function SchedulePage() {
                 </div>
               )}
             {entryModal.error && <p className="text-xs text-red-500 mb-3">{entryModal.error}</p>}
-            <div className="flex gap-2">
+            <div className="flex gap-2 mb-2">
               <button onClick={saveEntryModal} disabled={entryModal.saving}
                 className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50">
                 {entryModal.saving ? "Saving…" : "Save"}
@@ -690,6 +691,9 @@ export default function SchedulePage() {
                 Cancel
               </button>
             </div>
+            {entryModal.entry.phase?.id && (
+              <PhaseModalTabs phaseId={entryModal.entry.phase.id} jobId={entryModal.entry.job.id} />
+            )}
           </div>
         </div>
       )}
@@ -750,7 +754,7 @@ export default function SchedulePage() {
             )}
             <p className="text-xs text-gray-400 mb-3">Saving will update the Gantt, Timeline, and Jobs page — and cascade to dependent phases.</p>
             {phaseModal.error && <p className="text-xs text-red-500 mb-3">{phaseModal.error}</p>}
-            <div className="flex gap-2">
+            <div className="flex gap-2 mb-2">
               <button onClick={savePhaseModal} disabled={phaseModal.saving || !phaseModal.startDate}
                 className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50">
                 {phaseModal.saving ? "Saving…" : "Save"}
@@ -760,6 +764,7 @@ export default function SchedulePage() {
                 Cancel
               </button>
             </div>
+            <PhaseModalTabs phaseId={phaseModal.phase.id} jobId={phaseModal.phase.job.id} />
           </div>
         </div>
       )}

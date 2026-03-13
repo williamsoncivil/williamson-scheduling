@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Layout from "@/components/Layout";
+import { PhaseModalTabs } from "@/components/PhaseModalTabs";
 import Link from "next/link";
 import {
   format,
@@ -605,7 +606,7 @@ export default function TimelinePage() {
                 </div>
               )}
             {editModal.error && <p className="text-xs text-red-500 mb-3">{editModal.error}</p>}
-            <div className="flex gap-2">
+            <div className="flex gap-2 mb-2">
               <button onClick={saveEditModal} disabled={editModal.saving || !editModal.startDate || !editModal.endDate}
                 className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50">
                 {editModal.saving ? "Saving…" : "Save"}
@@ -615,6 +616,7 @@ export default function TimelinePage() {
                 Cancel
               </button>
             </div>
+            <PhaseModalTabs phaseId={editModal.phase.id} jobId={editModal.jobId} />
           </div>
         </div>
       )}
