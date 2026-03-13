@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Layout from "@/components/Layout";
 import { format, parseISO } from "date-fns";
+import { upload } from "@vercel/blob/client";
+import { useSession } from "next-auth/react";
 
 interface Document {
   id: string;
@@ -31,6 +33,7 @@ type CategoryFilter = "all" | "photo" | "document";
 type GroupBy = "none" | "phase";
 
 export default function FilesPage() {
+  const { data: session } = useSession();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [phases, setPhases] = useState<Phase[]>([]);
@@ -40,13 +43,20 @@ export default function FilesPage() {
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
   const [loading, setLoading] = useState(true);
 
+  // Upload state
+  const [uploadJobId, setUploadJobId] = useState("");
+  const [uploadPhaseId, setUploadPhaseId] = useState("");
+  const [uploadPhases, setUploadPhases] = useState<Phase[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
+
   useEffect(() => {
     fetch("/api/jobs")
       .then((r) => r.json())
       .then((d) => setJobs(d));
   }, []);
 
-  // Load phases when job changes
+  // Load phases when filter job changes
   useEffect(() => {
     setFilterPhase("");
     setPhases([]);
@@ -55,6 +65,16 @@ export default function FilesPage() {
       .then((r) => r.json())
       .then((d) => setPhases(Array.isArray(d) ? d : []));
   }, [filterJob]);
+
+  // Load phases for upload job picker
+  useEffect(() => {
+    setUploadPhaseId("");
+    setUploadPhases([]);
+    if (!uploadJobId) return;
+    fetch(`/api/jobs/${uploadJobId}/phases`)
+      .then((r) => r.json())
+      .then((d) => setUploadPhases(Array.isArray(d) ? d : []));
+  }, [uploadJobId]);
 
   useEffect(() => {
     setLoading(true);
@@ -69,6 +89,54 @@ export default function FilesPage() {
         setLoading(false);
       });
   }, [filterJob, filterPhase, filterCategory]);
+
+  const refreshDocs = () => {
+    const params = new URLSearchParams();
+    if (filterJob) params.set("jobId", filterJob);
+    if (filterPhase) params.set("phaseId", filterPhase);
+    if (filterCategory !== "all") params.set("fileCategory", filterCategory);
+    fetch(`/api/documents?${params.toString()}`)
+      .then((r) => r.json())
+      .then((d) => setDocuments(d));
+  };
+
+  const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!uploadJobId) { alert("Please select a job first."); return; }
+    if (!session?.user?.id) { alert("Not logged in — please refresh."); return; }
+    setUploading(true);
+    try {
+      const timestamp = Date.now();
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const blob = await upload(`uploads/${timestamp}_${safeName}`, file, {
+        access: "public",
+        handleUploadUrl: "/api/upload",
+      });
+      const res = await fetch("/api/documents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: file.name,
+          fileUrl: blob.url,
+          fileType: file.type || "application/octet-stream",
+          jobId: uploadJobId,
+          phaseId: uploadPhaseId || null,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(`Failed to save: ${err.error ?? res.statusText}`);
+      } else {
+        refreshDocs();
+      }
+    } catch (err) {
+      alert(`Upload error: ${String(err)}`);
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  };
 
   const photos = documents.filter((d) => d.fileCategory === "photo");
   const docs = documents.filter((d) => d.fileCategory === "document");
@@ -106,10 +174,68 @@ export default function FilesPage() {
     <Layout>
       <div className="p-6 max-w-6xl mx-auto">
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Files</h1>
-          <p className="text-gray-500 text-sm mt-0.5">All uploaded documents and photos</p>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Files</h1>
+            <p className="text-gray-500 text-sm mt-0.5">All uploaded documents and photos</p>
+          </div>
+          <button
+            onClick={() => setShowUpload((v) => !v)}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors shadow-sm"
+          >
+            <span className="text-base">+</span> Upload File
+          </button>
         </div>
+
+        {/* Upload panel */}
+        {showUpload && (
+          <div className="bg-white border border-blue-100 rounded-xl shadow-sm p-5 mb-6">
+            <div className="flex flex-col sm:flex-row gap-3 flex-wrap items-end">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Job <span className="text-red-400">*</span></label>
+                <select
+                  value={uploadJobId}
+                  onChange={(e) => setUploadJobId(e.target.value)}
+                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-44"
+                >
+                  <option value="">— Select job —</option>
+                  {jobs.map((j) => (
+                    <option key={j.id} value={j.id}>{j.name}</option>
+                  ))}
+                </select>
+              </div>
+              {uploadJobId && uploadPhases.length > 0 && (
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Phase <span className="text-gray-400">(optional)</span></label>
+                  <select
+                    value={uploadPhaseId}
+                    onChange={(e) => setUploadPhaseId(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white min-w-44"
+                  >
+                    <option value="">— No phase —</option>
+                    {uploadPhases.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <label className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors cursor-pointer ${
+                uploadJobId
+                  ? "bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100"
+                  : "bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed"
+              }`}>
+                <span>{uploading ? "Uploading…" : "📎 Choose File"}</span>
+                <input
+                  type="file"
+                  className="hidden"
+                  accept="image/*,application/pdf,video/*,.heic,.heif"
+                  disabled={!uploadJobId || uploading}
+                  onChange={uploadFile}
+                />
+              </label>
+            </div>
+          </div>
+        )}
 
         {/* Filters */}
         <div className="flex flex-col sm:flex-row gap-3 mb-6 flex-wrap">
