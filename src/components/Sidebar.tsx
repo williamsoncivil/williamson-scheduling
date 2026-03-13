@@ -80,10 +80,10 @@ export default function Sidebar() {
         {collapsed && <span className="text-2xl mx-auto">🔨</span>}
         <button
           onClick={toggle}
-          className="ml-auto text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg p-1.5 transition-colors text-xs font-bold"
+          className="ml-auto text-white bg-slate-600 hover:bg-blue-600 rounded-lg p-2 transition-colors text-sm font-bold shrink-0"
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
-          {collapsed ? "›" : "‹"}
+          {collapsed ? "▶" : "◀"}
         </button>
       </div>
 
