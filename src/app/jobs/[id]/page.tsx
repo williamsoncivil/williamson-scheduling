@@ -1299,9 +1299,9 @@ export default function JobDetailPage() {
                           {phase.description && <p className="text-xs text-gray-500">{phase.description}</p>}
                           {(phase.startDate || phase.endDate) && (
                             <p className="text-xs text-blue-600 mt-0.5">
-                              {phase.startDate ? format(parseISO(phase.startDate), "MMM d") : "?"}
+                              {phase.startDate ? format(parseISO(phase.startDate.split("T")[0]), "MMM d") : "?"}
                               {" → "}
-                              {phase.endDate ? format(parseISO(phase.endDate), "MMM d, yyyy") : "?"}
+                              {phase.endDate ? format(parseISO(phase.endDate.split("T")[0]), "MMM d, yyyy") : "?"}
                             </p>
                           )}
                           {phase.dependsOnId && (
@@ -1932,7 +1932,7 @@ export default function JobDetailPage() {
                   <span className="font-medium">{p.name}</span>
                   {p.startDate && p.endDate && (
                     <span className="text-xs text-blue-600 ml-2">
-                      → {format(parseISO(p.startDate as string), "MMM d")} – {format(parseISO(p.endDate as string), "MMM d, yyyy")}
+                      → {format(parseISO((p.startDate as string).split("T")[0]), "MMM d")} – {format(parseISO((p.endDate as string).split("T")[0]), "MMM d, yyyy")}
                     </span>
                   )}
                 </div>
@@ -2032,7 +2032,7 @@ export default function JobDetailPage() {
                     <span className="font-medium">{p.name}</span>
                     {p.startDate && p.endDate && (
                       <span>
-                        {" → "}{format(parseISO(p.startDate), "MMM d")}–{format(parseISO(p.endDate), "MMM d, yyyy")}
+                        {" → "}{format(parseISO(p.startDate.split("T")[0]), "MMM d")}–{format(parseISO(p.endDate.split("T")[0]), "MMM d, yyyy")}
                       </span>
                     )}
                   </p>
