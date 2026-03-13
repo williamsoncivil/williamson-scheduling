@@ -285,6 +285,12 @@ export default function JobDetailPage() {
   const [newPhaseDuration, setNewPhaseDuration] = useState<number | "">(7);
   const [newPhasePredecessorId, setNewPhasePredecessorId] = useState("");
   const [editingPhaseId, setEditingPhaseId] = useState<string | null>(null);
+  const [expandedPhaseIds, setExpandedPhaseIds] = useState<Set<string>>(new Set());
+  const togglePhaseExpand = (id: string) => setExpandedPhaseIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
   const [phaseEditStart, setPhaseEditStart] = useState("");
   const [phaseEditEnd, setPhaseEditEnd] = useState("");
   const [phaseEditDuration, setPhaseEditDuration] = useState<number | "">("");
@@ -1275,10 +1281,15 @@ export default function JobDetailPage() {
                     });
                     const isBlocked = blockers.length > 0;
 
+                    const isExpanded = expandedPhaseIds.has(phase.id);
+
                     return (
                     <div key={phase.id} className={`border rounded-xl overflow-hidden ${isBlocked ? "border-amber-300" : "border-gray-200"}`}>
                       {/* Phase header */}
-                      <div className={`flex items-center gap-3 p-3 ${isBlocked ? "bg-amber-50" : "bg-gray-50"}`}>
+                      <div
+                        className={`flex items-center gap-3 p-3 cursor-pointer select-none ${isBlocked ? "bg-amber-50 hover:bg-amber-100" : "bg-gray-50 hover:bg-gray-100"} transition-colors`}
+                        onClick={() => togglePhaseExpand(phase.id)}
+                      >
                         <div className="flex flex-col gap-0.5">
                           <button onClick={() => movePhase(phase, "up", phases)} disabled={idx === 0}
                             className="text-xs text-gray-400 hover:text-gray-600 disabled:opacity-30 leading-none">▲</button>
@@ -1313,7 +1324,7 @@ export default function JobDetailPage() {
                             </p>
                           )}
                         </div>
-                        <div className="flex gap-2 shrink-0">
+                        <div className="flex gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
                           <button
                             onClick={() => editingPhaseId === phase.id ? setEditingPhaseId(null) : startEditPhaseDates(phase)}
                             className="text-sm text-blue-600 hover:text-blue-800"
@@ -1324,7 +1335,11 @@ export default function JobDetailPage() {
                             Delete
                           </button>
                         </div>
+                        <span className="text-gray-400 text-xs shrink-0">{isExpanded ? "▲" : "▼"}</span>
                       </div>
+
+                      {/* Expandable content */}
+                      {isExpanded && <>
 
                       {/* Dependencies section */}
                       <div className="px-4 py-3 border-t border-gray-100 bg-white">
@@ -1429,8 +1444,7 @@ export default function JobDetailPage() {
                       </div>
 
                       {/* Phase date editor */}
-                      {editingPhaseId === phase.id && (
-                        <div className="p-4 border-t border-gray-200 bg-white">
+                      {editingPhaseId === phase.id && <div className="p-4 border-t border-gray-200 bg-white">
                           <div className="grid gap-3 sm:grid-cols-3">
                             <div>
                               <label className="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
@@ -1513,7 +1527,8 @@ export default function JobDetailPage() {
                             </div>
                           </div>
                         </div>
-                      )}
+                      }
+                      </>}
                     </div>
                     );
                   })}
