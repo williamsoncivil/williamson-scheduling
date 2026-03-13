@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { startOfWeek, endOfWeek, parseISO, startOfDay, endOfDay } from "date-fns";
+import { startOfWeek, endOfWeek, parseISO, startOfDay, endOfDay, startOfMonth, endOfMonth } from "date-fns";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -13,29 +13,36 @@ export async function GET(req: NextRequest) {
   const userId = searchParams.get("userId");
   const date = searchParams.get("date");
   const week = searchParams.get("week");
+  const month = searchParams.get("month");
 
   const where: Record<string, unknown> = {};
 
   if (jobId) {
     where.jobId = jobId;
   } else {
-    // When viewing the schedule calendar (no specific job), only show ACTIVE jobs
     where.job = { status: "ACTIVE" };
   }
   if (userId) where.userId = userId;
 
+  let rangeStart: Date | null = null;
+  let rangeEnd: Date | null = null;
+
   if (date) {
     const d = parseISO(date);
-    where.date = {
-      gte: startOfDay(d),
-      lte: endOfDay(d),
-    };
+    rangeStart = startOfDay(d);
+    rangeEnd = endOfDay(d);
+  } else if (month) {
+    const d = parseISO(month);
+    rangeStart = startOfMonth(d);
+    rangeEnd = endOfMonth(d);
   } else if (week) {
     const d = parseISO(week);
-    where.date = {
-      gte: startOfWeek(d, { weekStartsOn: 0 }),
-      lte: endOfWeek(d, { weekStartsOn: 0 }),
-    };
+    rangeStart = startOfWeek(d, { weekStartsOn: 0 });
+    rangeEnd = endOfWeek(d, { weekStartsOn: 0 });
+  }
+
+  if (rangeStart && rangeEnd) {
+    where.date = { gte: rangeStart, lte: rangeEnd };
   }
 
   const entries = await prisma.scheduleEntry.findMany({
@@ -49,7 +56,39 @@ export async function GET(req: NextRequest) {
     },
   });
 
-  return NextResponse.json(entries);
+  // Fetch unassigned phases — phases that fall in the date range but have no schedule entries
+  let unassignedPhases: {
+    id: string; name: string; startDate: string; endDate: string | null;
+    job: { id: string; name: string; color: string };
+  }[] = [];
+
+  if (rangeStart && rangeEnd && !userId && !jobId) {
+    const assignedPhaseIds = new Set(entries.map((e) => e.phase?.id).filter(Boolean));
+
+    const phases = await prisma.phase.findMany({
+      where: {
+        startDate: { gte: rangeStart, lte: rangeEnd },
+        job: { status: "ACTIVE" },
+      },
+      include: {
+        job: { select: { id: true, name: true, color: true } },
+        scheduleEntries: { select: { id: true } },
+      },
+      orderBy: { startDate: "asc" },
+    });
+
+    unassignedPhases = phases
+      .filter((p) => p.scheduleEntries.length === 0 && !assignedPhaseIds.has(p.id))
+      .map((p) => ({
+        id: p.id,
+        name: p.name,
+        startDate: p.startDate!.toISOString(),
+        endDate: p.endDate?.toISOString() ?? null,
+        job: p.job,
+      }));
+  }
+
+  return NextResponse.json({ entries, unassignedPhases });
 }
 
 export async function POST(req: NextRequest) {

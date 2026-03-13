@@ -30,6 +30,14 @@ interface ScheduleEntry {
   user: { id: string; name: string; role: string };
 }
 
+interface UnassignedPhase {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string | null;
+  job: { id: string; name: string; color: string };
+}
+
 interface User {
   id: string;
   name: string;
@@ -40,6 +48,7 @@ type GroupBy = "people" | "jobs";
 export default function SchedulePage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [entries, setEntries] = useState<ScheduleEntry[]>([]);
+  const [unassignedPhases, setUnassignedPhases] = useState<UnassignedPhase[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [filterUserId, setFilterUserId] = useState("");
   const [loading, setLoading] = useState(true);
@@ -68,17 +77,26 @@ export default function SchedulePage() {
 
   useEffect(() => {
     setLoading(true);
-    const weekStr = format(weekStart, "yyyy-MM-dd");
-    const url = filterUserId
-      ? `/api/schedule?week=${weekStr}&userId=${filterUserId}`
-      : `/api/schedule?week=${weekStr}`;
+    let url: string;
+    if (viewMode === "month") {
+      const monthStr = format(monthStart, "yyyy-MM-dd");
+      url = filterUserId
+        ? `/api/schedule?month=${monthStr}&userId=${filterUserId}`
+        : `/api/schedule?month=${monthStr}`;
+    } else {
+      const weekStr = format(weekStart, "yyyy-MM-dd");
+      url = filterUserId
+        ? `/api/schedule?week=${weekStr}&userId=${filterUserId}`
+        : `/api/schedule?week=${weekStr}`;
+    }
 
     fetch(url).then((r) => r.json()).then((d) => {
-      setEntries(d);
+      setEntries(d.entries ?? d);
+      setUnassignedPhases(d.unassignedPhases ?? []);
       setLoading(false);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentDate, filterUserId]);
+  }, [currentDate, filterUserId, viewMode]);
 
   const getEntriesForDay = (day: Date, entryList?: ScheduleEntry[]) => {
     const list = entryList ?? entries;
@@ -132,7 +150,8 @@ export default function SchedulePage() {
         ? `/api/schedule?week=${weekStr}&userId=${filterUserId}`
         : `/api/schedule?week=${weekStr}`;
       const d = await fetch(url).then((r) => r.json());
-      setEntries(d);
+      setEntries(d.entries ?? d);
+      setUnassignedPhases(d.unassignedPhases ?? []);
     } catch {
       setEntryModal((m) => m ? { ...m, saving: false, error: "Failed to save — try again" } : null);
     }
@@ -171,6 +190,21 @@ export default function SchedulePage() {
   const getEntriesForJobAndDay = (jobId: string, day: Date) =>
     entries.filter((e) => e.job.id === jobId && isSameDay(parseISO(e.date), day));
 
+  const getUnassignedForDay = (day: Date) =>
+    unassignedPhases.filter((p) => isSameDay(parseISO(p.startDate), day));
+
+  const renderUnassignedPhase = (phase: UnassignedPhase) => (
+    <div
+      key={`unassigned-${phase.id}`}
+      className="mb-1.5 p-2 rounded-lg text-xs border-2 border-dashed opacity-60"
+      style={{ borderColor: phase.job.color, color: phase.job.color, backgroundColor: `${phase.job.color}10` }}
+    >
+      <p className="font-semibold truncate">{phase.job.name}</p>
+      <p className="truncate">{phase.name}</p>
+      <p className="opacity-70 font-medium">Unassigned</p>
+    </div>
+  );
+
   // ── Render entry card ───────────────────────────────────────────────────────
   const renderEntry = (entry: ScheduleEntry, mode: GroupBy) => (
     <div
@@ -189,12 +223,14 @@ export default function SchedulePage() {
 
   const renderDayCell = (day: Date, entryList: ScheduleEntry[], mode: GroupBy) => {
     const isToday = isSameDay(day, new Date());
+    const unassigned = getUnassignedForDay(day);
     return (
       <div
         key={day.toISOString()}
         className={`p-2 border-r last:border-r-0 border-gray-100 min-h-24 ${isToday ? "bg-blue-50/50" : ""}`}
       >
         {entryList.map((entry) => renderEntry(entry, mode))}
+        {unassigned.map((p) => renderUnassignedPhase(p))}
       </div>
     );
   };
@@ -448,6 +484,15 @@ export default function SchedulePage() {
                         {dayEntries.length > 3 && (
                           <p className="text-xs text-gray-400">+{dayEntries.length - 3} more</p>
                         )}
+                        {getUnassignedForDay(day).map((p) => (
+                          <div
+                            key={`unassigned-${p.id}`}
+                            className="mb-0.5 px-1.5 py-0.5 rounded text-xs truncate border border-dashed opacity-60"
+                            style={{ borderColor: p.job.color, color: p.job.color }}
+                          >
+                            {p.name} · Unassigned
+                          </div>
+                        ))}
                       </div>
                     );
                   })}
