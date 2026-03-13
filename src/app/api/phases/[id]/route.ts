@@ -59,13 +59,10 @@ export async function PATCH(
     },
   });
 
-  // Run cascade if dates changed
+  // Run cascade whenever dates are explicitly provided (even if already stored — the old move
+  // endpoint may have already saved them, so we can't rely on a diff check here)
   let cascadedPhases: Awaited<ReturnType<typeof cascadePhaseUpdate>> = [];
-  const datesChanged =
-    (startDate !== undefined && newStart?.getTime() !== existing.startDate?.getTime()) ||
-    (endDate !== undefined && newEnd?.getTime() !== existing.endDate?.getTime());
-
-  if (datesChanged && (newStart || newEnd)) {
+  if ((startDate !== undefined || endDate !== undefined) && (newStart || newEnd)) {
     cascadedPhases = await cascadePhaseUpdate(params.id, newStart, newEnd);
   }
 
