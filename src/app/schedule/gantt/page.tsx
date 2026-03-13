@@ -675,7 +675,7 @@ export default function MasterGanttPage() {
                       return (
                         <svg key={i}
                           className="pointer-events-none"
-                          style={{ position: "absolute", left: minX, top: minY, width: W, height: H, zIndex: 16, overflow: "visible" }}>
+                          style={{ position: "absolute", left: minX, top: minY, width: W, height: H, zIndex: 4, overflow: "visible" }}>
                           <path d={d} fill="none" stroke="#475569" strokeWidth="1.5" opacity="0.8" />
                           <polygon points={`${lax},${ly2 - 4} ${lx2},${ly2} ${lax},${ly2 + 4}`} fill="#475569" opacity="0.8" />
                         </svg>
