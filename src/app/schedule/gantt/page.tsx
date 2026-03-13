@@ -61,6 +61,7 @@ interface Phase {
   startDate: string | null;
   endDate: string | null;
   dependsOnId: string | null;
+  completion: number;
 }
 
 interface Worker {
@@ -107,6 +108,7 @@ export default function MasterGanttPage() {
   const [editModal, setEditModal] = useState<{
     phase: Phase; jobId: string; jobName: string;
     startDate: string; endDate: string;
+    completion: number;
     assignedUserIds: Set<string>;
     saving: boolean; error: string;
   } | null>(null);
@@ -260,6 +262,7 @@ export default function MasterGanttPage() {
       jobName: job.name,
       startDate: eff?.startDate ?? phase.startDate ?? "",
       endDate: eff?.endDate ?? phase.endDate ?? "",
+      completion: phase.completion ?? 0,
       assignedUserIds: new Set(),
       saving: false,
       error: "",
@@ -273,7 +276,7 @@ export default function MasterGanttPage() {
       const res = await fetch(`/api/phases/${editModal.phase.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startDate: editModal.startDate, endDate: editModal.endDate }),
+        body: JSON.stringify({ startDate: editModal.startDate, endDate: editModal.endDate, completion: editModal.completion }),
       });
       if (!res.ok) throw new Error("Save failed");
 
@@ -716,6 +719,16 @@ export default function MasterGanttPage() {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Completion</label>
+                <select value={editModal.completion}
+                  onChange={(e) => setEditModal((m) => m ? { ...m, completion: parseInt(e.target.value) } : null)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  {[0,10,20,25,30,40,50,60,70,75,80,90,95,100].map((v) => (
+                    <option key={v} value={v}>{v === 100 ? "✓ Complete (100%)" : `${v}%`}</option>
+                  ))}
+                </select>
+              </div>
               {workers.length > 0 && (
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1.5">Assign People <span className="text-gray-400">(optional)</span></label>

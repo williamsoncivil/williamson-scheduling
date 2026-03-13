@@ -72,6 +72,7 @@ export default function SchedulePage() {
     phase: UnassignedPhase;
     startDate: string;
     endDate: string;
+    completion: number;
     assignedUserIds: Set<string>;
     saving: boolean;
     error: string;
@@ -203,6 +204,7 @@ export default function SchedulePage() {
       phase,
       startDate: phase.startDate.split("T")[0],
       endDate: phase.endDate ? phase.endDate.split("T")[0] : "",
+      completion: 0,
       assignedUserIds: new Set(),
       saving: false,
       error: "",
@@ -216,7 +218,7 @@ export default function SchedulePage() {
       const res = await fetch(`/api/phases/${phaseModal.phase.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startDate: phaseModal.startDate, endDate: phaseModal.endDate || null }),
+        body: JSON.stringify({ startDate: phaseModal.startDate, endDate: phaseModal.endDate || null, completion: phaseModal.completion }),
       });
       if (!res.ok) throw new Error("Save failed");
 
@@ -689,6 +691,16 @@ export default function SchedulePage() {
                   onChange={(e) => setPhaseModal((m) => m ? { ...m, endDate: e.target.value } : null)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
+            </div>
+            <div className="mb-3">
+              <label className="block text-xs font-medium text-gray-600 mb-1">Completion</label>
+              <select value={phaseModal.completion}
+                onChange={(e) => setPhaseModal((m) => m ? { ...m, completion: parseInt(e.target.value) } : null)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                {[0,10,20,25,30,40,50,60,70,75,80,90,95,100].map((v) => (
+                  <option key={v} value={v}>{v === 100 ? "✓ Complete (100%)" : `${v}%`}</option>
+                ))}
+              </select>
             </div>
             {users.length > 0 && (
               <div className="mb-3">

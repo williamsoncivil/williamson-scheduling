@@ -175,6 +175,7 @@ interface Phase {
   startDate: string | null;
   endDate: string | null;
   dependsOnId: string | null;
+  completion: number;
   predecessorDeps?: PhaseDependency[];
   successorDeps?: PhaseDependency[];
 }
@@ -1280,14 +1281,14 @@ export default function JobDetailPage() {
                       return predEnd && predEnd > now;
                     });
                     const isBlocked = blockers.length > 0;
-
+                    const isComplete = (phase.completion ?? 0) >= 100;
                     const isExpanded = expandedPhaseIds.has(phase.id);
 
                     return (
-                    <div key={phase.id} className={`border rounded-xl overflow-hidden ${isBlocked ? "border-amber-300" : "border-gray-200"}`}>
+                    <div key={phase.id} className={`border rounded-xl overflow-hidden ${isComplete ? "border-green-400" : isBlocked ? "border-amber-300" : "border-gray-200"}`}>
                       {/* Phase header */}
                       <div
-                        className={`flex items-center gap-3 p-3 cursor-pointer select-none ${isBlocked ? "bg-amber-50 hover:bg-amber-100" : "bg-gray-50 hover:bg-gray-100"} transition-colors`}
+                        className={`flex items-center gap-3 p-3 cursor-pointer select-none transition-colors ${isComplete ? "bg-green-50 hover:bg-green-100" : isBlocked ? "bg-amber-50 hover:bg-amber-100" : "bg-gray-50 hover:bg-gray-100"}`}
                         onClick={() => togglePhaseExpand(phase.id)}
                       >
                         <div className="flex flex-col gap-0.5">
@@ -1324,7 +1325,21 @@ export default function JobDetailPage() {
                             </p>
                           )}
                         </div>
-                        <div className="flex gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-2 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          {/* Completion selector */}
+                          <select
+                            value={phase.completion ?? 0}
+                            onChange={async (e) => {
+                              const val = parseInt(e.target.value);
+                              await fetch(`/api/phases/${phase.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ completion: val }) });
+                              setJob((prev) => prev ? { ...prev, phases: prev.phases.map((p) => p.id === phase.id ? { ...p, completion: val } : p) } : prev);
+                            }}
+                            className={`text-xs border rounded-lg px-2 py-1 font-medium ${isComplete ? "border-green-400 text-green-700 bg-green-50" : "border-gray-300 text-gray-600"}`}
+                          >
+                            {[0,10,20,25,30,40,50,60,70,75,80,90,95,100].map((v) => (
+                              <option key={v} value={v}>{v === 100 ? "✓ 100%" : `${v}%`}</option>
+                            ))}
+                          </select>
                           <button
                             onClick={() => editingPhaseId === phase.id ? setEditingPhaseId(null) : startEditPhaseDates(phase)}
                             className="text-sm text-blue-600 hover:text-blue-800"
