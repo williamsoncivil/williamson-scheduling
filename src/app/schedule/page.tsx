@@ -199,12 +199,12 @@ export default function SchedulePage() {
   const renderUnassignedPhase = (phase: UnassignedPhase) => (
     <div
       key={`unassigned-${phase.id}`}
-      className="mb-1.5 p-2 rounded-lg text-xs border-2 border-dashed opacity-60"
-      style={{ borderColor: phase.job.color, color: phase.job.color, backgroundColor: `${phase.job.color}10` }}
+      className="mb-1.5 p-2 rounded-lg text-white text-xs opacity-50"
+      style={{ backgroundColor: phase.job.color }}
     >
       <p className="font-semibold truncate">{phase.job.name}</p>
       <p className="truncate">{phase.name}</p>
-      <p className="opacity-70 font-medium">Unassigned</p>
+      <p className="opacity-80 italic">Unassigned</p>
     </div>
   );
 
@@ -490,8 +490,8 @@ export default function SchedulePage() {
                         {getUnassignedForDay(day).map((p) => (
                           <div
                             key={`unassigned-${p.id}`}
-                            className="mb-0.5 px-1.5 py-0.5 rounded text-xs truncate border border-dashed opacity-60"
-                            style={{ borderColor: p.job.color, color: p.job.color }}
+                            className="mb-0.5 px-1.5 py-0.5 rounded text-white text-xs truncate opacity-50"
+                            style={{ backgroundColor: p.job.color }}
                           >
                             {p.name} · Unassigned
                           </div>
