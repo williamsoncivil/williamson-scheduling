@@ -140,6 +140,8 @@ export default function TimelinePage() {
   } | null>(null);
 
   const [optimisticDates, setOptimisticDates] = useState<Record<string, { startDate: string; endDate: string }>>({});
+  const [hiddenJobIds, setHiddenJobIds] = useState<Set<string>>(new Set());
+  const toggleJobVisibility = (id: string) => setHiddenJobIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const [editModal, setEditModal] = useState<{
     phase: Phase; jobId: string; jobName: string;
     startDate: string; endDate: string;
@@ -254,7 +256,8 @@ export default function TimelinePage() {
   const todayOffset = differenceInDays(new Date(), viewStart);
   const showToday = todayOffset >= 0 && todayOffset <= totalDays;
 
-  const jobsWithPhases = jobs.filter((j) => j.phases.length > 0);
+  const allJobsWithPhases = jobs.filter((j) => j.phases.length > 0);
+  const jobsWithPhases = allJobsWithPhases.filter((j) => !hiddenJobIds.has(j.id));
 
   const periodLabel = `${format(viewStart, "MMM d")} – ${format(viewEnd, "MMM d, yyyy")}`;
 
@@ -316,6 +319,27 @@ export default function TimelinePage() {
             </Link>
           </div>
         </div>
+
+        {/* ── Job filter ──────────────────────────────────────────────────────── */}
+        {allJobsWithPhases.length > 1 && (
+          <div className="bg-white rounded-xl shadow-sm px-4 py-3 mb-4 flex flex-wrap gap-2 items-center">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide mr-1">Jobs</span>
+            {allJobsWithPhases.map((job) => {
+              const hidden = hiddenJobIds.has(job.id);
+              return (
+                <button key={job.id} onClick={() => toggleJobVisibility(job.id)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${hidden ? "border-gray-300 text-gray-400 bg-white" : "border-transparent text-white"}`}
+                  style={hidden ? {} : { backgroundColor: job.color }}>
+                  <span>{job.name}</span>
+                  {hidden && <span className="opacity-60">✕</span>}
+                </button>
+              );
+            })}
+            {hiddenJobIds.size > 0 && (
+              <button onClick={() => setHiddenJobIds(new Set())} className="text-xs text-blue-600 hover:underline ml-1">Show all</button>
+            )}
+          </div>
+        )}
 
         {/* ── Person color legend ──────────────────────────────────────────────── */}
         {allWorkers.length > 0 && (

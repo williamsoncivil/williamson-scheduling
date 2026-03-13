@@ -287,11 +287,32 @@ export default function JobDetailPage() {
   const [newPhasePredecessorId, setNewPhasePredecessorId] = useState("");
   const [editingPhaseId, setEditingPhaseId] = useState<string | null>(null);
   const [expandedPhaseIds, setExpandedPhaseIds] = useState<Set<string>>(new Set());
-  const togglePhaseExpand = (id: string) => setExpandedPhaseIds((prev) => {
-    const next = new Set(prev);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    return next;
-  });
+  const [phaseMessages, setPhaseMessages] = useState<Record<string, { id: string; content: string; createdAt: string; author: { name: string } }[]>>({});
+  const [phaseMessageInput, setPhaseMessageInput] = useState<Record<string, string>>({});
+  const [phaseMessageSending, setPhaseMessageSending] = useState<string | null>(null);
+  const fetchPhaseMessages = async (phaseId: string) => {
+    const res = await fetch(`/api/messages?jobId=${jobId}&phaseId=${phaseId}`);
+    if (res.ok) {
+      const data = await res.json();
+      setPhaseMessages((prev) => ({ ...prev, [phaseId]: data.messages ?? data }));
+    }
+  };
+  const sendPhaseMessage = async (phaseId: string) => {
+    const content = (phaseMessageInput[phaseId] ?? "").trim();
+    if (!content) return;
+    setPhaseMessageSending(phaseId);
+    await fetch("/api/messages", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content, jobId, phaseId }) });
+    setPhaseMessageInput((prev) => ({ ...prev, [phaseId]: "" }));
+    await fetchPhaseMessages(phaseId);
+    setPhaseMessageSending(null);
+  };
+  const togglePhaseExpand = (id: string) => {
+    setExpandedPhaseIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) { next.delete(id); } else { next.add(id); fetchPhaseMessages(id); }
+      return next;
+    });
+  };
   const [phaseEditStart, setPhaseEditStart] = useState("");
   const [phaseEditEnd, setPhaseEditEnd] = useState("");
   const [phaseEditDuration, setPhaseEditDuration] = useState<number | "">("");
@@ -1545,6 +1566,49 @@ export default function JobDetailPage() {
                           </div>
                         </div>
                       }
+
+                      {/* Phase Messages */}
+                      <div className="border-t border-gray-100">
+                        <div className="px-4 py-2 bg-gray-50">
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Phase Notes</p>
+                        </div>
+                        <div className="px-4 py-2 max-h-40 overflow-y-auto space-y-2">
+                          {(phaseMessages[phase.id] ?? []).length === 0 ? (
+                            <p className="text-xs text-gray-400 italic">No notes yet</p>
+                          ) : (
+                            (phaseMessages[phase.id] ?? []).map((msg) => (
+                              <div key={msg.id} className="flex gap-2">
+                                <div className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs flex items-center justify-center font-semibold shrink-0 mt-0.5">
+                                  {msg.author.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                  <span className="text-xs font-medium text-gray-700">{msg.author.name}</span>
+                                  <span className="text-xs text-gray-400 ml-1">{new Date(msg.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                                  <p className="text-xs text-gray-600 mt-0.5">{msg.content}</p>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                        <div className="px-4 py-2 border-t border-gray-100 flex gap-2" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="text"
+                            value={phaseMessageInput[phase.id] ?? ""}
+                            onChange={(e) => setPhaseMessageInput((prev) => ({ ...prev, [phase.id]: e.target.value }))}
+                            onKeyDown={(e) => { if (e.key === "Enter") sendPhaseMessage(phase.id); }}
+                            placeholder="Add a note…"
+                            className="flex-1 text-xs border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                          <button
+                            onClick={() => sendPhaseMessage(phase.id)}
+                            disabled={phaseMessageSending === phase.id || !(phaseMessageInput[phase.id] ?? "").trim()}
+                            className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700 disabled:opacity-40"
+                          >
+                            {phaseMessageSending === phase.id ? "…" : "Send"}
+                          </button>
+                        </div>
+                      </div>
+
                       </>}
                     </div>
                     );
