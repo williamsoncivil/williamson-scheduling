@@ -7,7 +7,10 @@ import { upload } from "@vercel/blob/client";
 import Layout from "@/components/Layout";
 import CopyJobModal from "@/components/CopyJobModal";
 import Link from "next/link";
-import { format, parseISO, addDays } from "date-fns";
+import { format, parseISO, parse, addDays } from "date-fns";
+
+// Parse a date string (YYYY-MM-DD or ISO) as LOCAL midnight to avoid UTC timezone shift
+const parseLocalDate = (dateStr: string) => parse(dateStr.split("T")[0], "yyyy-MM-dd", new Date());
 
 const DURATION_OPTIONS = [1, 2, 3, 4, 5, 6, 7, 10, 14, 21, 28, 30, 45, 60, 90];
 
@@ -1299,9 +1302,9 @@ export default function JobDetailPage() {
                           {phase.description && <p className="text-xs text-gray-500">{phase.description}</p>}
                           {(phase.startDate || phase.endDate) && (
                             <p className="text-xs text-blue-600 mt-0.5">
-                              {phase.startDate ? format(parseISO(phase.startDate.split("T")[0]), "MMM d") : "?"}
+                              {phase.startDate ? format(parseLocalDate(phase.startDate), "MMM d") : "?"}
                               {" → "}
-                              {phase.endDate ? format(parseISO(phase.endDate.split("T")[0]), "MMM d, yyyy") : "?"}
+                              {phase.endDate ? format(parseLocalDate(phase.endDate), "MMM d, yyyy") : "?"}
                             </p>
                           )}
                           {phase.dependsOnId && (
@@ -1338,7 +1341,7 @@ export default function JobDetailPage() {
                                     <span className="text-gray-400">({depTypeLabel(d.type)}{d.lagDays > 0 ? ` + ${d.lagDays}d` : ""})</span>
                                     {d.predecessor?.endDate && (
                                       <span className="text-gray-400 ml-1">
-                                        · ends {format(parseISO(d.predecessor.endDate.split("T")[0]), "MMM d")}
+                                        · ends {format(parseLocalDate(d.predecessor.endDate), "MMM d")}
                                       </span>
                                     )}
                                   </span>
@@ -1407,8 +1410,8 @@ export default function JobDetailPage() {
                                   <span className="font-medium">{user.name}</span>
                                   {" "}
                                   <span className="text-gray-400">
-                                    {startDate && format(parseISO(startDate), "MMM d")}
-                                    {startDate !== endDate && endDate && ` – ${format(parseISO(endDate), "MMM d")}`}
+                                    {startDate && format(parseLocalDate(startDate), "MMM d")}
+                                    {startDate !== endDate && endDate && ` – ${format(parseLocalDate(endDate), "MMM d")}`}
                                     {" "}({count}d)
                                   </span>
                                 </span>
@@ -1494,7 +1497,7 @@ export default function JobDetailPage() {
                                 {phases.filter((p) => p.id !== phase.id).map((p) => (
                                   <option key={p.id} value={p.id}>
                                     {p.name}
-                                    {p.endDate ? ` (ends ${format(parseISO(p.endDate.split("T")[0]), "MMM d")})` : ""}
+                                    {p.endDate ? ` (ends ${format(parseLocalDate(p.endDate), "MMM d")})` : ""}
                                   </option>
                                 ))}
                               </select>
@@ -1567,7 +1570,7 @@ export default function JobDetailPage() {
                       {phases.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name}
-                          {p.endDate ? ` (ends ${format(parseISO(p.endDate.split("T")[0]), "MMM d")})` : ""}
+                          {p.endDate ? ` (ends ${format(parseLocalDate(p.endDate), "MMM d")})` : ""}
                         </option>
                       ))}
                     </select>
@@ -1576,7 +1579,7 @@ export default function JobDetailPage() {
                 {newPhaseStart && newPhaseDuration && (
                   <p className="text-xs text-blue-600">
                     End: {endFromDuration(newPhaseStart, Number(newPhaseDuration))
-                      ? format(parseISO(endFromDuration(newPhaseStart, Number(newPhaseDuration))), "MMM d, yyyy")
+                      ? format(parseLocalDate(endFromDuration(newPhaseStart, Number(newPhaseDuration))), "MMM d, yyyy")
                       : "—"}
                     {" "}(skips weekends)
                   </p>
@@ -1932,7 +1935,7 @@ export default function JobDetailPage() {
                   <span className="font-medium">{p.name}</span>
                   {p.startDate && p.endDate && (
                     <span className="text-xs text-blue-600 ml-2">
-                      → {format(parseISO((p.startDate as string).split("T")[0]), "MMM d")} – {format(parseISO((p.endDate as string).split("T")[0]), "MMM d, yyyy")}
+                      → {format(parseLocalDate(p.startDate as string), "MMM d")} – {format(parseLocalDate(p.endDate as string), "MMM d, yyyy")}
                     </span>
                   )}
                 </div>
@@ -2032,7 +2035,7 @@ export default function JobDetailPage() {
                     <span className="font-medium">{p.name}</span>
                     {p.startDate && p.endDate && (
                       <span>
-                        {" → "}{format(parseISO(p.startDate.split("T")[0]), "MMM d")}–{format(parseISO(p.endDate.split("T")[0]), "MMM d, yyyy")}
+                        {" → "}{format(parseLocalDate(p.startDate), "MMM d")}–{format(parseLocalDate(p.endDate), "MMM d, yyyy")}
                       </span>
                     )}
                   </p>
@@ -2067,7 +2070,7 @@ export default function JobDetailPage() {
                   {phases.filter((p) => p.id !== addDepModal.phaseId).map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
-                      {p.endDate ? ` (ends ${format(parseISO(p.endDate.split("T")[0]), "MMM d")})` : ""}
+                      {p.endDate ? ` (ends ${format(parseLocalDate(p.endDate), "MMM d")})` : ""}
                     </option>
                   ))}
                 </select>
@@ -2078,7 +2081,7 @@ export default function JobDetailPage() {
                     const suggested = nextBusinessDayAfter(pred.endDate.split("T")[0]);
                     return (
                       <p className="text-xs text-blue-600 mt-1">
-                        📅 Suggested start: <strong>{format(parseISO(suggested), "EEE, MMM d, yyyy")}</strong> (next business day after predecessor ends)
+                        📅 Suggested start: <strong>{format(parseLocalDate(suggested), "EEE, MMM d, yyyy")}</strong> (next business day after predecessor ends)
                       </p>
                     );
                   }
@@ -2153,7 +2156,7 @@ export default function JobDetailPage() {
                   {phases.filter((p) => p.id !== editDepModal.phaseId).map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.name}
-                      {p.endDate ? ` (ends ${format(parseISO(p.endDate.split("T")[0]), "MMM d")})` : ""}
+                      {p.endDate ? ` (ends ${format(parseLocalDate(p.endDate), "MMM d")})` : ""}
                     </option>
                   ))}
                 </select>
@@ -2197,8 +2200,8 @@ export default function JobDetailPage() {
                 return (
                   <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-xs text-green-800">
                     <p className="font-semibold mb-1">📅 Dates will update to:</p>
-                    <p>Start: <strong>{format(parseISO(newDates.startDate), "EEE, MMM d, yyyy")}</strong></p>
-                    <p>End: <strong>{format(parseISO(newDates.endDate), "EEE, MMM d, yyyy")}</strong></p>
+                    <p>Start: <strong>{format(parseLocalDate(newDates.startDate), "EEE, MMM d, yyyy")}</strong></p>
+                    <p>End: <strong>{format(parseLocalDate(newDates.endDate), "EEE, MMM d, yyyy")}</strong></p>
                     <p className="text-green-600 mt-1">({duration} working day{duration !== 1 ? "s" : ""})</p>
                   </div>
                 );
