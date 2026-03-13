@@ -82,21 +82,23 @@ export function PhaseModalTabs({ phaseId, jobId }: PhaseModalTabsProps) {
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
     setUploading(true);
     try {
-      const timestamp = Date.now();
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const blob = await upload(`uploads/${timestamp}_${safeName}`, file, {
-        access: "public",
-        handleUploadUrl: "/api/upload",
-      });
-      await fetch("/api/documents", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: file.name, fileUrl: blob.url, fileType: file.type || "application/octet-stream", fileSize: file.size, jobId, phaseId }),
-      });
+      await Promise.all(files.map(async (file) => {
+        const timestamp = Date.now() + Math.random();
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const blob = await upload(`uploads/${timestamp}_${safeName}`, file, {
+          access: "public",
+          handleUploadUrl: "/api/upload",
+        });
+        await fetch("/api/documents", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: file.name, fileUrl: blob.url, fileType: file.type || "application/octet-stream", fileSize: file.size, jobId, phaseId }),
+        });
+      }));
       // Refresh docs
       const res2 = await fetch(`/api/documents?jobId=${jobId}&phaseId=${phaseId}`);
       if (res2.ok) { const data2 = await res2.json(); setDocs(Array.isArray(data2) ? data2 : (data2.documents ?? [])); }
@@ -182,7 +184,7 @@ export function PhaseModalTabs({ phaseId, jobId }: PhaseModalTabsProps) {
             className="w-full text-xs border-2 border-dashed border-gray-300 rounded-lg py-2 text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors disabled:opacity-40">
             {uploading ? "Uploading…" : "📎 Tap to attach photo or file"}
           </button>
-          <input ref={fileRef} type="file" accept="image/*,.pdf,video/*" className="hidden" onChange={handleFileChange} />
+          <input ref={fileRef} type="file" accept="image/*,.pdf,video/*" multiple className="hidden" onChange={handleFileChange} />
         </div>
       )}
     </div>
