@@ -869,14 +869,23 @@ export default function JobDetailPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    const form = new FormData();
-    form.append("file", file);
-    form.append("jobId", jobId);
-    if (uploadPhaseId) form.append("phaseId", uploadPhaseId);
-    await fetch("/api/upload", { method: "POST", body: form });
-    setUploading(false);
-    e.target.value = "";
-    fetchDocuments();
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      form.append("jobId", jobId);
+      if (uploadPhaseId) form.append("phaseId", uploadPhaseId);
+      const res = await fetch("/api/upload", { method: "POST", body: form });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(`Upload failed: ${err.error ?? res.statusText}`);
+      }
+    } catch (err) {
+      alert(`Upload error: ${String(err)}`);
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+      fetchDocuments();
+    }
   };
 
   const addProductionLog = async (e: React.FormEvent) => {
