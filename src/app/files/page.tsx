@@ -22,13 +22,20 @@ interface Job {
   name: string;
 }
 
+interface Phase {
+  id: string;
+  name: string;
+}
+
 type CategoryFilter = "all" | "photo" | "document";
 type GroupBy = "none" | "phase";
 
 export default function FilesPage() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [phases, setPhases] = useState<Phase[]>([]);
   const [filterJob, setFilterJob] = useState("");
+  const [filterPhase, setFilterPhase] = useState("");
   const [filterCategory, setFilterCategory] = useState<CategoryFilter>("all");
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
   const [loading, setLoading] = useState(true);
@@ -39,10 +46,21 @@ export default function FilesPage() {
       .then((d) => setJobs(d));
   }, []);
 
+  // Load phases when job changes
+  useEffect(() => {
+    setFilterPhase("");
+    setPhases([]);
+    if (!filterJob) return;
+    fetch(`/api/jobs/${filterJob}/phases`)
+      .then((r) => r.json())
+      .then((d) => setPhases(Array.isArray(d) ? d : []));
+  }, [filterJob]);
+
   useEffect(() => {
     setLoading(true);
     const params = new URLSearchParams();
     if (filterJob) params.set("jobId", filterJob);
+    if (filterPhase) params.set("phaseId", filterPhase);
     if (filterCategory !== "all") params.set("fileCategory", filterCategory);
     fetch(`/api/documents?${params.toString()}`)
       .then((r) => r.json())
@@ -50,7 +68,7 @@ export default function FilesPage() {
         setDocuments(d);
         setLoading(false);
       });
-  }, [filterJob, filterCategory]);
+  }, [filterJob, filterPhase, filterCategory]);
 
   const photos = documents.filter((d) => d.fileCategory === "photo");
   const docs = documents.filter((d) => d.fileCategory === "document");
@@ -123,6 +141,20 @@ export default function FilesPage() {
               <option key={j.id} value={j.id}>{j.name}</option>
             ))}
           </select>
+
+          {/* Phase filter — only shown when a job is selected */}
+          {filterJob && phases.length > 0 && (
+            <select
+              value={filterPhase}
+              onChange={(e) => setFilterPhase(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="">All Phases</option>
+              {phases.map((p) => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          )}
 
           {/* Group by phase toggle */}
           {filterCategory !== "photo" && (

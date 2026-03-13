@@ -11,9 +11,12 @@ export async function GET(req: NextRequest) {
   const jobId = searchParams.get("jobId");
   const fileCategory = searchParams.get("fileCategory"); // "photo" | "document" | null (all)
 
+  const phaseId = searchParams.get("phaseId");
+
   const where: Record<string, unknown> = {};
 
   if (jobId) where.jobId = jobId;
+  if (phaseId) where.phaseId = phaseId;
   if (fileCategory && fileCategory !== "all") where.fileCategory = fileCategory;
 
   const documents = await prisma.document.findMany({
