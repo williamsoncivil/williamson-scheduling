@@ -67,6 +67,14 @@ export default function SchedulePage() {
     error: string;
   } | null>(null);
 
+  const [phaseModal, setPhaseModal] = useState<{
+    phase: UnassignedPhase;
+    startDate: string;
+    endDate: string;
+    saving: boolean;
+    error: string;
+  } | null>(null);
+
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 });
   const weekEnd = endOfWeek(currentDate, { weekStartsOn: 0 });
   const days = eachDayOfInterval({ start: weekStart, end: weekEnd });
@@ -100,6 +108,20 @@ export default function SchedulePage() {
 
   /** Strip UTC time offset so dates don't shift by a day in local timezone */
   const parseDate = (dateStr: string) => parseISO(dateStr.split("T")[0]);
+
+  const refetch = async () => {
+    let url: string;
+    if (viewMode === "month") {
+      const monthStr = format(monthStart, "yyyy-MM-dd");
+      url = filterUserId ? `/api/schedule?month=${monthStr}&userId=${filterUserId}` : `/api/schedule?month=${monthStr}`;
+    } else {
+      const weekStr = format(weekStart, "yyyy-MM-dd");
+      url = filterUserId ? `/api/schedule?week=${weekStr}&userId=${filterUserId}` : `/api/schedule?week=${weekStr}`;
+    }
+    const d = await fetch(url).then((r) => r.json());
+    setEntries(d.entries ?? d);
+    setUnassignedPhases(d.unassignedPhases ?? []);
+  };
 
   const getEntriesForDay = (day: Date, entryList?: ScheduleEntry[]) => {
     const list = entryList ?? entries;
@@ -160,6 +182,34 @@ export default function SchedulePage() {
     }
   };
 
+  // ── Unassigned phase date edit ─────────────────────────────────────────────
+  const openPhaseModal = (phase: UnassignedPhase) => {
+    setPhaseModal({
+      phase,
+      startDate: phase.startDate.split("T")[0],
+      endDate: phase.endDate ? phase.endDate.split("T")[0] : "",
+      saving: false,
+      error: "",
+    });
+  };
+
+  const savePhaseModal = async () => {
+    if (!phaseModal) return;
+    setPhaseModal((m) => m ? { ...m, saving: true, error: "" } : null);
+    try {
+      const res = await fetch(`/api/phases/${phaseModal.phase.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ startDate: phaseModal.startDate, endDate: phaseModal.endDate || null }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      setPhaseModal(null);
+      await refetch();
+    } catch {
+      setPhaseModal((m) => m ? { ...m, saving: false, error: "Failed to save — try again" } : null);
+    }
+  };
+
   // ── By Jobs grouping ───────────────────────────────────────────────────────
   // All unique jobs in current entries
   const allJobRows = (() => {
@@ -199,7 +249,8 @@ export default function SchedulePage() {
   const renderUnassignedPhase = (phase: UnassignedPhase) => (
     <div
       key={`unassigned-${phase.id}`}
-      className="mb-1.5 p-2 rounded-lg text-white text-xs opacity-50"
+      onClick={(e) => { e.stopPropagation(); openPhaseModal(phase); }}
+      className="mb-1.5 p-2 rounded-lg text-white text-xs opacity-50 cursor-pointer hover:opacity-70 transition-opacity"
       style={{ backgroundColor: phase.job.color }}
     >
       <p className="font-semibold truncate">{phase.job.name}</p>
@@ -490,7 +541,8 @@ export default function SchedulePage() {
                         {getUnassignedForDay(day).map((p) => (
                           <div
                             key={`unassigned-${p.id}`}
-                            className="mb-0.5 px-1.5 py-0.5 rounded text-white text-xs truncate opacity-50"
+                            onClick={(e) => { e.stopPropagation(); openPhaseModal(p); }}
+                            className="mb-0.5 px-1.5 py-0.5 rounded text-white text-xs truncate opacity-50 cursor-pointer hover:opacity-70 transition-opacity"
                             style={{ backgroundColor: p.job.color }}
                           >
                             {p.name} · Unassigned
@@ -551,6 +603,43 @@ export default function SchedulePage() {
                 {entryModal.saving ? "Saving…" : "Save"}
               </button>
               <button onClick={() => setEntryModal(null)}
+                className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Phase date edit modal */}
+      {phaseModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setPhaseModal(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-80 mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-4">
+              <h3 className="font-semibold text-gray-900 text-base">{phaseModal.phase.name}</h3>
+              <p className="text-xs text-gray-400 mt-0.5">{phaseModal.phase.job.name} · Unassigned phase</p>
+            </div>
+            <div className="space-y-3 mb-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
+                <input type="date" value={phaseModal.startDate}
+                  onChange={(e) => setPhaseModal((m) => m ? { ...m, startDate: e.target.value } : null)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">End Date</label>
+                <input type="date" value={phaseModal.endDate}
+                  onChange={(e) => setPhaseModal((m) => m ? { ...m, endDate: e.target.value } : null)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+            </div>
+            <p className="text-xs text-gray-400 mb-3">Saving will update the Gantt, Timeline, and Jobs page — and cascade to dependent phases.</p>
+            {phaseModal.error && <p className="text-xs text-red-500 mb-3">{phaseModal.error}</p>}
+            <div className="flex gap-2">
+              <button onClick={savePhaseModal} disabled={phaseModal.saving || !phaseModal.startDate}
+                className="flex-1 bg-blue-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50">
+                {phaseModal.saving ? "Saving…" : "Save"}
+              </button>
+              <button onClick={() => setPhaseModal(null)}
                 className="px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 transition-colors">
                 Cancel
               </button>
