@@ -868,18 +868,31 @@ export default function JobDetailPage() {
 
   const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !session?.user?.id) return;
+    if (!file) return;
+
+    if (!session?.user?.id) {
+      alert("Not logged in — please refresh and try again.");
+      return;
+    }
+
     setUploading(true);
     try {
-      // Phase 1: upload file directly from browser to Vercel Blob (no server size limit)
+      // Phase 1: upload file directly from browser to Vercel Blob
       const timestamp = Date.now();
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const filename = `${timestamp}_${safeName}`;
+      const filename = `uploads/${timestamp}_${safeName}`;
 
-      const blob = await upload(filename, file, {
-        access: "public",
-        handleUploadUrl: "/api/upload",
-      });
+      let blobUrl: string;
+      try {
+        const blob = await upload(filename, file, {
+          access: "public",
+          handleUploadUrl: "/api/upload",
+        });
+        blobUrl = blob.url;
+      } catch (uploadErr) {
+        alert(`Upload to storage failed: ${String(uploadErr)}`);
+        return;
+      }
 
       // Phase 2: save document record to DB
       const res = await fetch("/api/documents", {
@@ -887,7 +900,7 @@ export default function JobDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: file.name,
-          fileUrl: blob.url,
+          fileUrl: blobUrl,
           fileType: file.type || "application/octet-stream",
           jobId,
           phaseId: uploadPhaseId || null,
@@ -896,10 +909,10 @@ export default function JobDetailPage() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(`Failed to save file record: ${err.error ?? res.statusText}`);
+        alert(`File uploaded but failed to save record: ${err.error ?? res.statusText}`);
       }
     } catch (err) {
-      alert(`Upload error: ${String(err)}`);
+      alert(`Unexpected error: ${String(err)}`);
     } finally {
       setUploading(false);
       e.target.value = "";
@@ -1706,7 +1719,7 @@ export default function JobDetailPage() {
                   <span className="text-3xl mb-2">📎</span>
                   <span className="text-sm text-gray-500">{uploading ? "Uploading..." : "Click to upload a file"}</span>
                   <span className="text-xs text-gray-400 mt-1">Images auto-categorized as photos</span>
-                  <input type="file" className="hidden" onChange={uploadFile} disabled={uploading} />
+                  <input type="file" className="hidden" accept="image/*,application/pdf,video/*,.heic,.heif" onChange={uploadFile} disabled={uploading} />
                 </label>
               </div>
             </div>
