@@ -648,39 +648,30 @@ export default function MasterGanttPage() {
                       );
                     })}
 
-                    {/* Dependency arrows — one SVG per arrow, own coordinate space */}
-                    {depArrows.map((a, i) => {
-                      const stub = 16;
-                      const pad = 8;
-                      const minX = Math.min(a.x1, a.x2) - pad;
-                      const maxX = Math.max(a.x1, a.x2) + pad;
-                      const minY = Math.min(a.y1, a.y2) - pad;
-                      const maxY = Math.max(a.y1, a.y2) + pad;
-                      const W = maxX - minX;
-                      const H = maxY - minY;
-                      // Translate to SVG local coords
-                      const lx1 = a.x1 - minX;
-                      const ly1 = a.y1 - minY;
-                      const lx2 = a.x2 - minX;
-                      const ly2 = a.y2 - minY;
-                      const lex = lx1 + stub;
-                      const lax = lx2 - 5; // arrowhead tip at lx2
-                      let d: string;
-                      if (lax >= lex) {
-                        d = `M ${lx1} ${ly1} H ${lex} V ${ly2} H ${lax}`;
-                      } else {
-                        const midY = (ly1 + ly2) / 2;
-                        d = `M ${lx1} ${ly1} H ${lex} V ${midY} H ${lx2 - stub} V ${ly2} H ${lax}`;
-                      }
-                      return (
-                        <svg key={i}
-                          className="pointer-events-none"
-                          style={{ position: "absolute", left: minX, top: minY, width: W, height: H, zIndex: 4, overflow: "visible" }}>
-                          <path d={d} fill="none" stroke="#475569" strokeWidth="1.5" opacity="0.8" />
-                          <polygon points={`${lax},${ly2 - 4} ${lx2},${ly2} ${lax},${ly2 + 4}`} fill="#475569" opacity="0.8" />
-                        </svg>
-                      );
-                    })}
+                    {/* Dependency arrows — single SVG overlay, z-index above bars */}
+                    <svg
+                      className="pointer-events-none"
+                      style={{ position: "absolute", left: 0, top: 0, width: timelineWidth, height: totalHeight, zIndex: 9 }}
+                    >
+                      {depArrows.map((a, i) => {
+                        const stub = 16;
+                        const ax = a.x2 - 5;
+                        let d: string;
+                        const ex = a.x1 + stub;
+                        if (ax >= ex) {
+                          d = `M ${a.x1} ${a.y1} H ${ex} V ${a.y2} H ${ax}`;
+                        } else {
+                          const midY = (a.y1 + a.y2) / 2;
+                          d = `M ${a.x1} ${a.y1} H ${ex} V ${midY} H ${a.x2 - stub} V ${a.y2} H ${ax}`;
+                        }
+                        return (
+                          <g key={i}>
+                            <path d={d} fill="none" stroke="#1e293b" strokeWidth="1.5" opacity="0.45" />
+                            <polygon points={`${ax},${a.y2 - 4} ${a.x2},${a.y2} ${ax},${a.y2 + 4}`} fill="#1e293b" opacity="0.55" />
+                          </g>
+                        );
+                      })}
+                    </svg>
                   </div>
                 </div>
                 {/* ── End body row ──────────────────────────────────────────── */}
