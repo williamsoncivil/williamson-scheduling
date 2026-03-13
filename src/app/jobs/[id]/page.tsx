@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { upload } from "@vercel/blob/client";
 import Layout from "@/components/Layout";
 import CopyJobModal from "@/components/CopyJobModal";
 import Link from "next/link";
@@ -867,18 +868,24 @@ export default function JobDetailPage() {
 
   const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !session?.user?.id) return;
     setUploading(true);
     try {
-      const form = new FormData();
-      form.append("file", file);
-      form.append("jobId", jobId);
-      if (uploadPhaseId) form.append("phaseId", uploadPhaseId);
-      const res = await fetch("/api/upload", { method: "POST", body: form });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        alert(`Upload failed: ${err.error ?? res.statusText}`);
-      }
+      // Client-side upload: file goes directly from browser → Vercel Blob (no 4.5MB server limit)
+      const timestamp = Date.now();
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const filename = `${timestamp}_${safeName}`;
+
+      await upload(filename, file, {
+        access: "public",
+        handleUploadUrl: "/api/upload",
+        clientPayload: JSON.stringify({
+          jobId,
+          phaseId: uploadPhaseId || null,
+          userId: session.user.id,
+          originalName: file.name,
+        }),
+      });
     } catch (err) {
       alert(`Upload error: ${String(err)}`);
     } finally {
