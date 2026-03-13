@@ -648,45 +648,38 @@ export default function MasterGanttPage() {
                       );
                     })}
 
-                    {/* Dependency arrows — div-based for reliable rendering */}
+                    {/* Dependency arrows — one SVG per arrow, own coordinate space */}
                     {depArrows.map((a, i) => {
-                      const stub = 14;
-                      const ex = a.x1 + stub; // elbow X
-                      const runX = ex;         // horizontal run starts here
-                      const runEnd = a.x2 - 5; // stop before bar edge for arrowhead
-                      const topY = Math.min(a.y1, a.y2);
-                      const botY = Math.max(a.y1, a.y2);
-                      const color = "#64748b";
-                      const thick = 1.5;
-                      const canSimple = runEnd >= ex; // normal case: succ is to the right
-                      if (canSimple) {
-                        return (
-                          <div key={i} className="pointer-events-none" style={{ position: "absolute", zIndex: 16, inset: 0 }}>
-                            {/* Horizontal stub from pred right edge */}
-                            <div style={{ position: "absolute", left: a.x1, top: a.y1 - thick / 2, width: stub, height: thick, backgroundColor: color, opacity: 0.75 }} />
-                            {/* Vertical connector */}
-                            <div style={{ position: "absolute", left: ex - thick / 2, top: topY, width: thick, height: botY - topY + thick, backgroundColor: color, opacity: 0.75 }} />
-                            {/* Horizontal run to successor */}
-                            <div style={{ position: "absolute", left: ex, top: a.y2 - thick / 2, width: Math.max(runEnd - ex, 0), height: thick, backgroundColor: color, opacity: 0.75 }} />
-                            {/* Arrowhead (right-pointing triangle) */}
-                            <div style={{ position: "absolute", left: runEnd, top: a.y2 - 4, width: 0, height: 0, borderTop: "4px solid transparent", borderBottom: "4px solid transparent", borderLeft: `5px solid ${color}`, opacity: 0.85 }} />
-                          </div>
-                        );
+                      const stub = 16;
+                      const pad = 8;
+                      const minX = Math.min(a.x1, a.x2) - pad;
+                      const maxX = Math.max(a.x1, a.x2) + pad;
+                      const minY = Math.min(a.y1, a.y2) - pad;
+                      const maxY = Math.max(a.y1, a.y2) + pad;
+                      const W = maxX - minX;
+                      const H = maxY - minY;
+                      // Translate to SVG local coords
+                      const lx1 = a.x1 - minX;
+                      const ly1 = a.y1 - minY;
+                      const lx2 = a.x2 - minX;
+                      const ly2 = a.y2 - minY;
+                      const lex = lx1 + stub;
+                      const lax = lx2 - 5; // arrowhead tip at lx2
+                      let d: string;
+                      if (lax >= lex) {
+                        d = `M ${lx1} ${ly1} H ${lex} V ${ly2} H ${lax}`;
                       } else {
-                        // Overlap: route via mid-row gap
-                        const midY = (a.y1 + a.y2) / 2;
-                        const leftEnd = a.x2 - stub - 5;
-                        return (
-                          <div key={i} className="pointer-events-none" style={{ position: "absolute", zIndex: 16, inset: 0 }}>
-                            <div style={{ position: "absolute", left: a.x1, top: a.y1 - thick / 2, width: stub, height: thick, backgroundColor: color, opacity: 0.75 }} />
-                            <div style={{ position: "absolute", left: ex - thick / 2, top: Math.min(a.y1, midY), width: thick, height: Math.abs(midY - a.y1), backgroundColor: color, opacity: 0.75 }} />
-                            <div style={{ position: "absolute", left: Math.min(ex, leftEnd) - thick / 2, top: midY - thick / 2, width: Math.abs(leftEnd - ex) + thick, height: thick, backgroundColor: color, opacity: 0.75 }} />
-                            <div style={{ position: "absolute", left: leftEnd - thick / 2, top: Math.min(midY, a.y2), width: thick, height: Math.abs(a.y2 - midY), backgroundColor: color, opacity: 0.75 }} />
-                            <div style={{ position: "absolute", left: leftEnd, top: a.y2 - thick / 2, width: Math.max(a.x2 - 5 - leftEnd, 0), height: thick, backgroundColor: color, opacity: 0.75 }} />
-                            <div style={{ position: "absolute", left: a.x2 - 5, top: a.y2 - 4, width: 0, height: 0, borderTop: "4px solid transparent", borderBottom: "4px solid transparent", borderLeft: `5px solid ${color}`, opacity: 0.85 }} />
-                          </div>
-                        );
+                        const midY = (ly1 + ly2) / 2;
+                        d = `M ${lx1} ${ly1} H ${lex} V ${midY} H ${lx2 - stub} V ${ly2} H ${lax}`;
                       }
+                      return (
+                        <svg key={i}
+                          className="pointer-events-none"
+                          style={{ position: "absolute", left: minX, top: minY, width: W, height: H, zIndex: 16, overflow: "visible" }}>
+                          <path d={d} fill="none" stroke="#475569" strokeWidth="1.5" opacity="0.8" />
+                          <polygon points={`${lax},${ly2 - 4} ${lx2},${ly2} ${lax},${ly2 + 4}`} fill="#475569" opacity="0.8" />
+                        </svg>
+                      );
                     })}
                   </div>
                 </div>
