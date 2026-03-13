@@ -871,21 +871,33 @@ export default function JobDetailPage() {
     if (!file || !session?.user?.id) return;
     setUploading(true);
     try {
-      // Client-side upload: file goes directly from browser → Vercel Blob (no 4.5MB server limit)
+      // Phase 1: upload file directly from browser to Vercel Blob (no server size limit)
       const timestamp = Date.now();
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
       const filename = `${timestamp}_${safeName}`;
 
-      await upload(filename, file, {
+      const blob = await upload(filename, file, {
         access: "public",
         handleUploadUrl: "/api/upload",
-        clientPayload: JSON.stringify({
+      });
+
+      // Phase 2: save document record to DB
+      const res = await fetch("/api/documents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: file.name,
+          fileUrl: blob.url,
+          fileType: file.type || "application/octet-stream",
           jobId,
           phaseId: uploadPhaseId || null,
-          userId: session.user.id,
-          originalName: file.name,
         }),
       });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(`Failed to save file record: ${err.error ?? res.statusText}`);
+      }
     } catch (err) {
       alert(`Upload error: ${String(err)}`);
     } finally {

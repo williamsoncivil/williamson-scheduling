@@ -2,11 +2,12 @@ import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 
 export const maxDuration = 60;
 
-// Called by the Vercel Blob client SDK (two phases: token generation + upload complete)
+// Handles both phases of the Vercel Blob client upload handshake:
+//   Phase 1 (token generation): Vercel Blob SDK → POST /api/upload → returns clientToken
+//   Phase 2 (upload complete):  Vercel Blob → POST /api/upload → we do nothing (DB save is client-side)
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const body = (await request.json()) as HandleUploadBody;
 
@@ -14,8 +15,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const jsonResponse = await handleUpload({
       body,
       request,
-      onBeforeGenerateToken: async (_pathname, clientPayload) => {
-        // Verify session before issuing an upload token
+      onBeforeGenerateToken: async (_pathname, _clientPayload) => {
         const session = await getServerSession(authOptions);
         if (!session) throw new Error("Unauthorized");
         return {
@@ -23,36 +23,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             "image/jpeg", "image/png", "image/gif", "image/webp",
             "image/heic", "image/heif",
             "application/pdf",
-            "video/mp4", "video/quicktime", "video/mov",
+            "video/mp4", "video/quicktime",
           ],
           maximumSizeInBytes: 50 * 1024 * 1024, // 50 MB
-          tokenPayload: clientPayload ?? "",
         };
       },
-      onUploadCompleted: async ({ blob, tokenPayload }) => {
-        // Called by Vercel after the file is stored — save record to DB
-        const { jobId, phaseId, userId, originalName } = JSON.parse(tokenPayload || "{}");
-        const fileType = blob.contentType || "application/octet-stream";
-        const fileCategory = fileType.startsWith("image/") ? "photo" : "document";
-
-        await prisma.document.create({
-          data: {
-            name: originalName || blob.pathname,
-            fileUrl: blob.url,
-            fileType,
-            fileCategory,
-            uploadedById: userId,
-            jobId,
-            phaseId: phaseId || null,
-          },
-        });
+      onUploadCompleted: async () => {
+        // DB record is saved by the client after upload — nothing to do here
       },
     });
 
     return NextResponse.json(jsonResponse);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("Upload error:", msg);
+    console.error("Upload token error:", msg);
     return NextResponse.json({ error: msg }, { status: 400 });
   }
 }
