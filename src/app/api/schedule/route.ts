@@ -72,13 +72,13 @@ export async function GET(req: NextRequest) {
       },
       include: {
         job: { select: { id: true, name: true, color: true } },
-        scheduleEntries: { select: { id: true } },
+        schedules: { select: { id: true } },
       },
       orderBy: { startDate: "asc" },
     });
 
     unassignedPhases = phases
-      .filter((p) => p.scheduleEntries.length === 0 && !assignedPhaseIds.has(p.id))
+      .filter((p) => p.schedules.length === 0 && !assignedPhaseIds.has(p.id))
       .map((p) => ({
         id: p.id,
         name: p.name,
