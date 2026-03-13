@@ -103,13 +103,10 @@ export async function cascadePhaseUpdate(
           // successor starts when predecessor finishes + lag
           if (current.newEnd) {
             let proposed = addDays(current.newEnd, dep.lagDays);
-            proposed = snapToWeekdayUTC(proposed); // skip weekends
-            // Only shift forward
-            if (!newSuccessorStart || proposed > newSuccessorStart) {
-              newSuccessorStart = proposed;
-              if (businessDayDuration !== null) {
-                newSuccessorEnd = addBusinessDaysUTC(newSuccessorStart, businessDayDuration);
-              }
+            proposed = snapToWeekdayUTC(proposed);
+            newSuccessorStart = proposed;
+            if (businessDayDuration !== null) {
+              newSuccessorEnd = addBusinessDaysUTC(newSuccessorStart, businessDayDuration);
             }
           }
           break;
@@ -119,11 +116,9 @@ export async function cascadePhaseUpdate(
           if (current.newStart) {
             let proposed = addDays(current.newStart, dep.lagDays);
             proposed = snapToWeekdayUTC(proposed);
-            if (!newSuccessorStart || proposed > newSuccessorStart) {
-              newSuccessorStart = proposed;
-              if (businessDayDuration !== null) {
-                newSuccessorEnd = addBusinessDaysUTC(newSuccessorStart, businessDayDuration);
-              }
+            newSuccessorStart = proposed;
+            if (businessDayDuration !== null) {
+              newSuccessorEnd = addBusinessDaysUTC(newSuccessorStart, businessDayDuration);
             }
           }
           break;
@@ -133,7 +128,7 @@ export async function cascadePhaseUpdate(
           if (current.newEnd) {
             let proposed = addDays(current.newEnd, dep.lagDays);
             proposed = snapToWeekdayUTC(proposed);
-            if (!newSuccessorEnd || proposed > newSuccessorEnd) {
+            {
               newSuccessorEnd = proposed;
               // Preserve duration (shift start back by business days)
               if (businessDayDuration !== null && newSuccessorEnd) {
@@ -155,7 +150,7 @@ export async function cascadePhaseUpdate(
           if (current.newStart) {
             let proposed = addDays(current.newStart, dep.lagDays);
             proposed = snapToWeekdayUTC(proposed);
-            if (!newSuccessorEnd || proposed > newSuccessorEnd) {
+            {
               newSuccessorEnd = proposed;
               if (businessDayDuration !== null && newSuccessorEnd) {
                 let d = new Date(newSuccessorEnd);
