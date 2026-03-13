@@ -265,7 +265,7 @@ export default function JobDetailPage() {
   const jobId = params.id as string;
 
   const [job, setJob] = useState<Job | null>(null);
-  const [activeTab, setActiveTab] = useState<TabId>("overview");
+  const [activeTab, setActiveTab] = useState<TabId>("phases");
   const [loading, setLoading] = useState(true);
   const [copyModal, setCopyModal] = useState(false);
   const [archiving, setArchiving] = useState(false);

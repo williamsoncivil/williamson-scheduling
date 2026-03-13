@@ -52,7 +52,7 @@ export default function SchedulePage() {
   const [users, setUsers] = useState<User[]>([]);
   const [filterUserId, setFilterUserId] = useState("");
   const [loading, setLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<"week" | "month">("week");
+  const [viewMode, setViewMode] = useState<"week" | "month">("month");
   const [groupBy, setGroupBy] = useState<GroupBy>("people");
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
   const [jobDropdownOpen, setJobDropdownOpen] = useState(false);
