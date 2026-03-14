@@ -49,6 +49,9 @@ export function PhaseModalTabs({ phaseId, jobId }: PhaseModalTabsProps) {
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Lightbox
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+
   const fetchTeam = async () => {
     if (scheduleItems !== null) return;
     const res = await fetch(`/api/schedule?jobId=${jobId}&phaseId=${phaseId}`);
@@ -205,37 +208,95 @@ export function PhaseModalTabs({ phaseId, jobId }: PhaseModalTabsProps) {
       )}
 
       {/* Files tab — list scrolls, upload button pinned at bottom */}
-      {tab === "files" && (
-        <div className="flex flex-col gap-2">
-          {/* Scrollable file list */}
-          <div className="max-h-40 overflow-y-auto space-y-2">
-            {docs === null ? (
-              <p className="text-xs text-gray-400">Loading…</p>
-            ) : docs.length === 0 ? (
-              <p className="text-xs text-gray-400 italic">No files yet</p>
-            ) : docs.map((doc) => (
-              <div key={doc.id} className="flex items-center gap-2">
-                {isImage(doc.fileType) ? (
-                  <img src={doc.fileUrl} alt={doc.name} className="w-10 h-10 object-cover rounded border border-gray-200 shrink-0" />
-                ) : (
-                  <div className="w-10 h-10 bg-red-50 border border-red-200 rounded flex items-center justify-center shrink-0 text-[10px] font-bold text-red-600">PDF</div>
+      {tab === "files" && (() => {
+        const images = (docs ?? []).filter(d => isImage(d.fileType));
+        return (
+          <div className="flex flex-col gap-2">
+            {/* Scrollable file list */}
+            <div className="max-h-40 overflow-y-auto space-y-2">
+              {docs === null ? (
+                <p className="text-xs text-gray-400">Loading…</p>
+              ) : docs.length === 0 ? (
+                <p className="text-xs text-gray-400 italic">No files yet</p>
+              ) : docs.map((doc) => {
+                const imgIdx = images.findIndex(i => i.id === doc.id);
+                return (
+                  <div key={doc.id} className="flex items-center gap-2">
+                    {isImage(doc.fileType) ? (
+                      <img
+                        src={doc.fileUrl} alt={doc.name}
+                        onClick={() => setLightboxIndex(imgIdx)}
+                        className="w-10 h-10 object-cover rounded border border-gray-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 bg-red-50 border border-red-200 rounded flex items-center justify-center shrink-0 text-[10px] font-bold text-red-600">PDF</div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <a href={doc.fileUrl} target="_blank" rel="noreferrer"
+                        className="text-xs text-blue-600 hover:underline truncate block font-medium">{doc.name}</a>
+                      <p className="text-xs text-gray-400">{doc.uploadedBy.name} · {formatDate(doc.createdAt)}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Upload button always visible at bottom */}
+            <button onClick={() => fileRef.current?.click()} disabled={uploading}
+              className="w-full text-xs border-2 border-dashed border-gray-300 rounded-lg py-2.5 text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors disabled:opacity-40 shrink-0">
+              {uploading ? "Uploading…" : "📎 Attach photos or files (multiple OK)"}
+            </button>
+            <input ref={fileRef} type="file" accept="image/*,.pdf,video/*" multiple className="hidden" onChange={handleFileChange} />
+
+            {/* Lightbox */}
+            {lightboxIndex !== null && images.length > 0 && (
+              <div
+                className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center"
+                onClick={() => setLightboxIndex(null)}
+              >
+                {/* Close */}
+                <button
+                  onClick={() => setLightboxIndex(null)}
+                  className="absolute top-4 right-4 text-white text-2xl font-bold w-10 h-10 flex items-center justify-center rounded-full bg-black/40 hover:bg-black/60"
+                >✕</button>
+
+                {/* Counter */}
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white text-sm font-medium bg-black/40 px-3 py-1 rounded-full">
+                  {lightboxIndex + 1} / {images.length}
+                </div>
+
+                {/* Prev */}
+                {images.length > 1 && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setLightboxIndex((lightboxIndex - 1 + images.length) % images.length); }}
+                    className="absolute left-4 top-1/2 -translate-y-1/2 text-white text-3xl w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hover:bg-black/60"
+                  >‹</button>
                 )}
-                <div className="flex-1 min-w-0">
-                  <a href={doc.fileUrl} target="_blank" rel="noreferrer"
-                    className="text-xs text-blue-600 hover:underline truncate block font-medium">{doc.name}</a>
-                  <p className="text-xs text-gray-400">{doc.uploadedBy.name} · {formatDate(doc.createdAt)}</p>
+
+                {/* Image */}
+                <img
+                  src={images[lightboxIndex].fileUrl}
+                  alt={images[lightboxIndex].name}
+                  onClick={(e) => e.stopPropagation()}
+                  className="max-w-[90vw] max-h-[85vh] object-contain rounded shadow-2xl"
+                />
+
+                {/* Next */}
+                {images.length > 1 && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setLightboxIndex((lightboxIndex + 1) % images.length); }}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-white text-3xl w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hover:bg-black/60"
+                  >›</button>
+                )}
+
+                {/* Caption */}
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white text-sm bg-black/40 px-4 py-1.5 rounded-full max-w-xs truncate">
+                  {images[lightboxIndex].name}
                 </div>
               </div>
-            ))}
+            )}
           </div>
-          {/* Upload button always visible at bottom */}
-          <button onClick={() => fileRef.current?.click()} disabled={uploading}
-            className="w-full text-xs border-2 border-dashed border-gray-300 rounded-lg py-2.5 text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors disabled:opacity-40 shrink-0">
-            {uploading ? "Uploading…" : "📎 Attach photos or files (multiple OK)"}
-          </button>
-          <input ref={fileRef} type="file" accept="image/*,.pdf,video/*" multiple className="hidden" onChange={handleFileChange} />
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
