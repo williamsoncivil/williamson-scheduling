@@ -252,16 +252,21 @@ export function PhaseModalTabs({ phaseId, jobId }: PhaseModalTabsProps) {
             {lightboxIndex !== null && images.length > 0 && (
               <div
                 className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center"
+                style={{ touchAction: "none" }}
                 onClick={() => setLightboxIndex(null)}
                 onTouchStart={(e) => { touchStartX.current = e.touches[0].clientX; }}
+                onTouchMove={(e) => e.preventDefault()}
                 onTouchEnd={(e) => {
                   if (touchStartX.current === null) return;
                   const diff = touchStartX.current - e.changedTouches[0].clientX;
-                  if (Math.abs(diff) > 50) {
+                  if (Math.abs(diff) > 40) {
                     setLightboxIndex(diff > 0
                       ? (lightboxIndex + 1) % images.length
                       : (lightboxIndex - 1 + images.length) % images.length
                     );
+                  } else {
+                    // Short tap = close
+                    setLightboxIndex(null);
                   }
                   touchStartX.current = null;
                 }}
