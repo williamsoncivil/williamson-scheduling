@@ -130,15 +130,21 @@ export default function SchedulePage() {
 
   const getEntriesForDay = (day: Date, entryList?: ScheduleEntry[]) => {
     const list = entryList ?? entries;
-    return list.filter((e) => {
-      // If the entry has a phase with a date range, spread it across all days in that range
+    const matched = list.filter((e) => {
       if (e.phase?.startDate) {
         const start = parseDate(e.phase.startDate);
         const end = e.phase.endDate ? parseDate(e.phase.endDate) : start;
         return day >= start && day <= end;
       }
-      // Otherwise just match the specific entry date
       return isSameDay(parseDate(e.date), day);
+    });
+    // Deduplicate: only one entry per phase per day
+    const seen = new Set<string>();
+    return matched.filter((e) => {
+      const key = e.phase?.id ?? e.id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
     });
   };
 
@@ -298,8 +304,8 @@ export default function SchedulePage() {
     });
   };
 
-  const getEntriesForJobAndDay = (jobId: string, day: Date) =>
-    entries.filter((e) => {
+  const getEntriesForJobAndDay = (jobId: string, day: Date) => {
+    const matched = entries.filter((e) => {
       if (e.job.id !== jobId) return false;
       if (e.phase?.startDate) {
         const start = parseDate(e.phase.startDate);
@@ -308,6 +314,14 @@ export default function SchedulePage() {
       }
       return isSameDay(parseDate(e.date), day);
     });
+    const seen = new Set<string>();
+    return matched.filter((e) => {
+      const key = e.phase?.id ?? e.id;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
 
   const getUnassignedForDay = (day: Date) =>
     unassignedPhases.filter((p) => {
