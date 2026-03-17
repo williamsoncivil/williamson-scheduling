@@ -414,7 +414,7 @@ export default function MasterGanttPage() {
             <div
               ref={scrollRef}
               className="overflow-auto"
-              style={{ maxHeight: "calc(100vh - 260px)", position: "relative", cursor: "grab" }}
+              style={{ maxHeight: "calc(100vh - 260px)", position: "relative", cursor: "grab", WebkitOverflowScrolling: "touch" }}
               onMouseDown={(e) => {
                 if ((e.target as HTMLElement).closest("button,select,input,a")) return;
                 const el = scrollRef.current;

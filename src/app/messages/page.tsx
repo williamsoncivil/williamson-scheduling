@@ -151,7 +151,7 @@ export default function MessagesPage() {
 
   return (
     <Layout>
-      <div className="p-6 max-w-4xl mx-auto flex flex-col" style={{ height: "calc(100vh - 32px)" }}>
+      <div className="p-4 md:p-6 max-w-4xl mx-auto flex flex-col h-[calc(100dvh-100px)] md:h-[calc(100dvh-32px)]">
         {/* Header */}
         <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>

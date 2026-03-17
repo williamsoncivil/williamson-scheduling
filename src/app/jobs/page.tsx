@@ -61,7 +61,7 @@ export default function JobsPage() {
   return (
     <Layout>
       <div className="p-6 max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-start justify-between mb-6 gap-3 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Jobs</h1>
             <p className="text-gray-500 text-sm mt-0.5">{jobs.length} {showArchived ? "archived" : "active"} projects</p>

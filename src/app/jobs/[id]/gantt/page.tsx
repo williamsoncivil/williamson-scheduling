@@ -291,7 +291,7 @@ export default function JobGanttPage() {
             </div>
 
             {/* Timeline */}
-            <div className="flex-1 overflow-x-auto">
+            <div className="flex-1 overflow-x-auto" style={{ WebkitOverflowScrolling: "touch" }}>
               <div style={{ width: timelineWidth, minWidth: "100%" }}>
                 {/* Month labels for whole job view */}
                 {viewMode === "wholejob" && (
