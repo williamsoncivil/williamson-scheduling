@@ -23,9 +23,9 @@ model User {
   supervisorEntries    ScheduleEntry[] @relation("Supervisor")
   messages             Message[]
   documents            Document[]
-  messagesLastReadAt   DateTime?
-  emailNotifications   Boolean          @default(true)
-  mentions             MessageMention[]
+  messagesLastReadAt      DateTime?
+  emailNotificationLevel  EmailNotificationLevel @default(ALL)
+  mentions                MessageMention[]
 }
 
 model Job {
@@ -76,6 +76,12 @@ model PhaseDependency {
   successor   Phase @relation("SuccessorDeps", fields: [successorId], references: [id], onDelete: Cascade)
 
   @@unique([predecessorId, successorId])
+}
+
+enum EmailNotificationLevel {
+  NONE
+  MENTIONS
+  ALL
 }
 
 enum DependencyType {

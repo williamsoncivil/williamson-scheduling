@@ -22,7 +22,7 @@ export default function SettingsPage() {
   const { data: session } = useSession();
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
-  const [emailNotifications, setEmailNotifications] = useState(true);
+  const [emailNotificationLevel, setEmailNotificationLevel] = useState<"NONE" | "MENTIONS" | "ALL">("ALL");
   const [savingPref, setSavingPref] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<User>>({});
@@ -58,17 +58,19 @@ export default function SettingsPage() {
     fetchUsers();
     // Load current user's own preferences
     fetch("/api/users/me").then((r) => r.json()).then((d) => {
-      if (typeof d.emailNotifications === "boolean") setEmailNotifications(d.emailNotifications);
+      if (d.emailNotificationLevel === "NONE" || d.emailNotificationLevel === "MENTIONS" || d.emailNotificationLevel === "ALL") {
+        setEmailNotificationLevel(d.emailNotificationLevel);
+      }
     });
   }, []);
 
-  const toggleEmailNotifications = async (val: boolean) => {
-    setEmailNotifications(val);
+  const setEmailLevel = async (val: "NONE" | "MENTIONS" | "ALL") => {
+    setEmailNotificationLevel(val);
     setSavingPref(true);
     await fetch("/api/users/me", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ emailNotifications: val }),
+      body: JSON.stringify({ emailNotificationLevel: val }),
     });
     setSavingPref(false);
   };
@@ -180,25 +182,27 @@ export default function SettingsPage() {
         {/* ── My Notifications (visible to everyone) ── */}
         <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
           <h2 className="font-semibold text-gray-900 mb-1">My Notifications</h2>
-          <p className="text-sm text-gray-500 mb-4">Choose how you want to be notified when someone @mentions you.</p>
-          <div className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
-            <div>
-              <p className="text-sm font-medium text-gray-900">Email notifications</p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                Get an email when someone @mentions you in a message
-              </p>
-            </div>
-            <button
-              onClick={() => toggleEmailNotifications(!emailNotifications)}
-              disabled={savingPref}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-                emailNotifications ? "bg-blue-600" : "bg-gray-200"
-              }`}
-            >
-              <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                emailNotifications ? "translate-x-6" : "translate-x-1"
-              }`} />
-            </button>
+          <p className="text-sm text-gray-500 mb-4">Choose when you receive email notifications.</p>
+          <div className="flex flex-col sm:flex-row gap-3">
+            {([
+              { value: "NONE", label: "Off", description: "No emails" },
+              { value: "MENTIONS", label: "@Mentions only", description: "Email when someone @mentions you" },
+              { value: "ALL", label: "All messages", description: "Email on every new message" },
+            ] as const).map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setEmailLevel(opt.value)}
+                disabled={savingPref}
+                className={`flex-1 text-left px-4 py-3 rounded-lg border-2 transition-colors disabled:opacity-50 ${
+                  emailNotificationLevel === opt.value
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-gray-200 hover:border-gray-300"
+                }`}
+              >
+                <p className={`text-sm font-medium ${emailNotificationLevel === opt.value ? "text-blue-700" : "text-gray-900"}`}>{opt.label}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{opt.description}</p>
+              </button>
+            ))}
           </div>
           {savingPref && <p className="text-xs text-gray-400 mt-2">Saving…</p>}
         </div>

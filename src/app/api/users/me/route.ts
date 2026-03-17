@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { EmailNotificationLevel } from "@prisma/client";
 
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -9,7 +10,7 @@ export async function GET() {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { id: true, name: true, email: true, role: true, phone: true, emailNotifications: true },
+    select: { id: true, name: true, email: true, role: true, phone: true, emailNotificationLevel: true },
   });
 
   return NextResponse.json(user);
@@ -20,14 +21,17 @@ export async function PATCH(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const data: { emailNotifications?: boolean; phone?: string | null } = {};
-  if (typeof body.emailNotifications === "boolean") data.emailNotifications = body.emailNotifications;
+  const data: { emailNotificationLevel?: EmailNotificationLevel; phone?: string | null } = {};
+
+  if (body.emailNotificationLevel && Object.values(EmailNotificationLevel).includes(body.emailNotificationLevel)) {
+    data.emailNotificationLevel = body.emailNotificationLevel as EmailNotificationLevel;
+  }
   if ("phone" in body) data.phone = body.phone ?? null;
 
   const user = await prisma.user.update({
     where: { id: session.user.id },
     data,
-    select: { id: true, name: true, email: true, role: true, phone: true, emailNotifications: true },
+    select: { id: true, name: true, email: true, role: true, phone: true, emailNotificationLevel: true },
   });
 
   return NextResponse.json(user);

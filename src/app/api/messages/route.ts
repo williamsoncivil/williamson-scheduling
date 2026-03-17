@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Parse @mentions: match @Name or @First Last (two words)
-  const allUsers = await prisma.user.findMany({ select: { id: true, name: true, email: true, emailNotifications: true, role: true } });
+  const allUsers = await prisma.user.findMany({ select: { id: true, name: true, email: true, emailNotificationLevel: true, role: true } });
   const mentionedUserIds: string[] = [];
 
   // Sort by name length desc so "John Smith" matches before "John"
@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
 
     for (const uid of mentionedUserIds) {
       const mentionedUser = allUsers.find((u) => u.id === uid);
-      if (mentionedUser?.emailNotifications && mentionedUser.email) {
+      if (mentionedUser?.email && (mentionedUser.emailNotificationLevel === "MENTIONS" || mentionedUser.emailNotificationLevel === "ALL")) {
         // Fire and forget — don't await so response isn't delayed
         sendMentionEmail({
           toEmail: mentionedUser.email,
@@ -98,7 +98,7 @@ export async function POST(req: NextRequest) {
   const admins = allUsers.filter(
     (u) =>
       u.role === "ADMIN" &&
-      u.emailNotifications &&
+      u.emailNotificationLevel === "ALL" &&
       u.email &&
       u.id !== session.user.id &&
       !mentionedUserIds.includes(u.id)
