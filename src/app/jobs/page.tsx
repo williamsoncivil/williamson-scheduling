@@ -28,6 +28,21 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(true);
   const [copyModal, setCopyModal] = useState<{ id: string; name: string } | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [archivingId, setArchivingId] = useState<string | null>(null);
+
+  const archiveJob = async (job: Job) => {
+    const newStatus = job.status === "ARCHIVED" ? "ACTIVE" : "ARCHIVED";
+    const label = newStatus === "ARCHIVED" ? "Archive" : "Unarchive";
+    if (!confirm(`${label} "${job.name}"?`)) return;
+    setArchivingId(job.id);
+    await fetch(`/api/jobs/${job.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: newStatus }),
+    });
+    setArchivingId(null);
+    fetchJobs(showArchived);
+  };
 
   const fetchJobs = async (archived = false) => {
     setLoading(true);
@@ -120,11 +135,24 @@ export default function JobsPage() {
                     >
                       View
                     </button>
+                    {job.status !== "ARCHIVED" && (
+                      <button
+                        onClick={() => setCopyModal({ id: job.id, name: job.name })}
+                        className="flex-1 text-center text-sm font-medium text-gray-600 border border-gray-200 py-1.5 rounded-lg hover:bg-gray-50 transition-colors"
+                      >
+                        Copy
+                      </button>
+                    )}
                     <button
-                      onClick={() => setCopyModal({ id: job.id, name: job.name })}
-                      className="flex-1 text-center text-sm font-medium text-gray-600 border border-gray-200 py-1.5 rounded-lg hover:bg-gray-50 transition-colors"
+                      onClick={() => archiveJob(job)}
+                      disabled={archivingId === job.id}
+                      className={`flex-1 text-center text-sm font-medium py-1.5 rounded-lg transition-colors disabled:opacity-50 ${
+                        job.status === "ARCHIVED"
+                          ? "text-green-700 border border-green-200 hover:bg-green-50"
+                          : "text-gray-500 border border-gray-200 hover:bg-gray-50"
+                      }`}
                     >
-                      Copy
+                      {archivingId === job.id ? "…" : job.status === "ARCHIVED" ? "Unarchive" : "Archive"}
                     </button>
                   </div>
                 </div>
