@@ -644,7 +644,7 @@ export default function SchedulePage() {
       {/* Entry edit modal */}
       {entryModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setEntryModal(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl p-6 w-80 mx-4" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-80 mx-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="mb-4">
               <h3 className="font-semibold text-gray-900 text-base">{entryModal.entry.job.name}</h3>
               <p className="text-xs text-gray-400 mt-0.5">
@@ -735,7 +735,7 @@ export default function SchedulePage() {
       {/* Phase date edit modal */}
       {phaseModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setPhaseModal(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl p-6 w-80 mx-4" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-80 mx-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="mb-4">
               <h3 className="font-semibold text-gray-900 text-base">{phaseModal.phase.name}</h3>
               <p className="text-xs text-gray-400 mt-0.5">{phaseModal.phase.job.name} · Unassigned phase</p>
