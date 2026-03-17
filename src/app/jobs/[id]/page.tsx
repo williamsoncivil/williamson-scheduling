@@ -1135,7 +1135,7 @@ export default function JobDetailPage() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6 overflow-x-auto">
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-6 overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
           {TABS.map((tab) => (
             <button
               key={tab.id}
@@ -1311,7 +1311,7 @@ export default function JobDetailPage() {
                     <div key={phase.id} className={`border rounded-xl overflow-hidden ${isComplete ? "border-green-400" : isBlocked ? "border-amber-300" : "border-gray-200"}`}>
                       {/* Phase header */}
                       <div
-                        className={`flex items-center gap-3 p-3 cursor-pointer select-none transition-colors ${isComplete ? "bg-green-50 hover:bg-green-100" : isBlocked ? "bg-amber-50 hover:bg-amber-100" : "bg-gray-50 hover:bg-gray-100"}`}
+                        className={`flex items-start gap-3 p-3 cursor-pointer select-none transition-colors ${isComplete ? "bg-green-50 hover:bg-green-100" : isBlocked ? "bg-amber-50 hover:bg-amber-100" : "bg-gray-50 hover:bg-gray-100"}`}
                         onClick={() => togglePhaseExpand(phase.id)}
                       >
                         <div className="flex flex-col gap-0.5">
@@ -1357,7 +1357,7 @@ export default function JobDetailPage() {
                               await fetch(`/api/phases/${phase.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ completion: val }) });
                               setJob((prev) => prev ? { ...prev, phases: prev.phases.map((p) => p.id === phase.id ? { ...p, completion: val } : p) } : prev);
                             }}
-                            className={`text-xs border rounded-lg px-2 py-1 font-medium ${isComplete ? "border-green-400 text-green-700 bg-green-50" : "border-gray-300 text-gray-600"}`}
+                            className={`text-xs border rounded-lg px-2 py-1.5 min-h-8 font-medium ${isComplete ? "border-green-400 text-green-700 bg-green-50" : "border-gray-300 text-gray-600"}`}
                           >
                             {[0,10,20,25,30,40,50,60,70,75,80,90,95,100].map((v) => (
                               <option key={v} value={v}>{v === 100 ? "✓ 100%" : `${v}%`}</option>
@@ -1365,12 +1365,12 @@ export default function JobDetailPage() {
                           </select>
                           <button
                             onClick={() => editingPhaseId === phase.id ? setEditingPhaseId(null) : startEditPhaseDates(phase)}
-                            className="text-sm text-blue-600 hover:text-blue-800"
+                            className="text-sm text-blue-600 hover:text-blue-800 px-2 py-1.5 min-h-8 rounded-lg hover:bg-blue-50 transition-colors"
                           >
-                            {editingPhaseId === phase.id ? "Cancel" : "Edit Dates"}
+                            {editingPhaseId === phase.id ? "Cancel" : "Edit"}
                           </button>
-                          <button onClick={() => deletePhase(phase.id)} className="text-red-400 hover:text-red-600 text-sm">
-                            Delete
+                          <button onClick={() => deletePhase(phase.id)} className="text-red-400 hover:text-red-600 text-sm px-2 py-1.5 min-h-8 rounded-lg hover:bg-red-50 transition-colors">
+                            Del
                           </button>
                         </div>
                         <span className="text-gray-400 text-xs shrink-0">{isExpanded ? "▲" : "▼"}</span>
@@ -1482,8 +1482,8 @@ export default function JobDetailPage() {
                       </div>
 
                       {/* Phase date editor */}
-                      {editingPhaseId === phase.id && <div className="p-4 border-t border-gray-200 bg-white">
-                          <div className="grid gap-3 sm:grid-cols-3">
+                      {editingPhaseId === phase.id && <div className="p-4 border-t border-gray-200 bg-white overflow-x-hidden">
+                          <div className="grid gap-3 grid-cols-1 sm:grid-cols-3">
                             <div>
                               <label className="block text-xs font-medium text-gray-600 mb-1">Start Date</label>
                               <input
@@ -1524,7 +1524,7 @@ export default function JobDetailPage() {
                                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                               />
                             </div>
-                            <div className="sm:col-span-2">
+                            <div className="sm:col-span-3">
                               <label className="block text-xs font-medium text-gray-600 mb-1">Depends On (phase that must finish first)</label>
                               <select
                                 value={phaseEditDependsOn}
@@ -1554,13 +1554,19 @@ export default function JobDetailPage() {
                                 ))}
                               </select>
                             </div>
-                            <div className="sm:col-span-2">
+                            <div className="sm:col-span-3 flex gap-2">
                               <button
                                 onClick={() => savePhaseDates(phase)}
                                 disabled={savingPhase || !phaseEditStart || !phaseEditEnd}
-                                className="bg-blue-600 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+                                className="flex-1 sm:flex-none bg-blue-600 text-white min-h-10 py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
                               >
                                 {savingPhase ? "Saving..." : "Save Dates"}
+                              </button>
+                              <button
+                                onClick={() => setEditingPhaseId(null)}
+                                className="flex-1 sm:flex-none min-h-10 py-2 px-4 rounded-lg text-sm font-medium border border-gray-300 text-gray-600 hover:bg-gray-50"
+                              >
+                                Cancel
                               </button>
                             </div>
                           </div>
@@ -1816,7 +1822,7 @@ export default function JobDetailPage() {
                 </div>
                 <label className="flex flex-col items-center justify-center border-2 border-dashed border-gray-300 rounded-xl p-8 cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors">
                   <span className="text-3xl mb-2">📎</span>
-                  <span className="text-sm text-gray-500">{uploading ? "Uploading..." : "Click to upload a file"}</span>
+                  <span className="text-sm text-gray-500">{uploading ? "Uploading..." : "📷 Take Photo or Upload File"}</span>
                   <span className="text-xs text-gray-400 mt-1">Images auto-categorized as photos</span>
                   <input type="file" className="hidden" accept="image/*,application/pdf,video/*,.heic,.heif" multiple onChange={uploadFile} disabled={uploading} />
                 </label>

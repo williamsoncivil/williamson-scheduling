@@ -269,7 +269,7 @@ export function PhaseModalTabs({ phaseId, jobId }: PhaseModalTabsProps) {
             {/* Upload button always visible at bottom */}
             <button onClick={() => fileRef.current?.click()} disabled={uploading}
               className="w-full text-xs border-2 border-dashed border-gray-300 rounded-lg py-2.5 text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors disabled:opacity-40 shrink-0">
-              {uploading ? "Uploading…" : "📎 Attach photos or files (multiple OK)"}
+              {uploading ? "Uploading…" : "📷 Take Photo or Upload File"}
             </button>
             <input ref={fileRef} type="file" accept="image/*,.pdf,video/*" multiple className="hidden" onChange={handleFileChange} />
 
