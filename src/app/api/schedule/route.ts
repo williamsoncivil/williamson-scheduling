@@ -69,8 +69,12 @@ export async function GET(req: NextRequest) {
 
     const phases = await prisma.phase.findMany({
       where: {
-        startDate: { gte: rangeStart, lte: rangeEnd },
         job: { status: "ACTIVE" },
+        startDate: { not: null, lte: rangeEnd },
+        OR: [
+          { endDate: { gte: rangeStart } },
+          { endDate: null },
+        ],
       },
       include: {
         job: { select: { id: true, name: true, color: true } },
