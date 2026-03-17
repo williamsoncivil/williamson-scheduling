@@ -706,7 +706,7 @@ export default function MasterGanttPage() {
       {/* Edit dates modal */}
       {editModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setEditModal(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl p-6 w-80 mx-4" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-2xl p-6 w-80 mx-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="mb-4">
               <h3 className="font-semibold text-gray-900 text-base">{editModal.phase.name}</h3>
               <p className="text-xs text-gray-400 mt-0.5">{editModal.jobName}</p>
