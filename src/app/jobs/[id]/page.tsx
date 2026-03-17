@@ -1818,7 +1818,7 @@ export default function JobDetailPage() {
                   <span className="text-3xl mb-2">📎</span>
                   <span className="text-sm text-gray-500">{uploading ? "Uploading..." : "Click to upload a file"}</span>
                   <span className="text-xs text-gray-400 mt-1">Images auto-categorized as photos</span>
-                  <input type="file" className="hidden" accept="image/*,application/pdf,video/*,.heic,.heif" onChange={uploadFile} disabled={uploading} />
+                  <input type="file" className="hidden" accept="image/*,application/pdf,video/*,.heic,.heif" multiple onChange={uploadFile} disabled={uploading} />
                 </label>
               </div>
             </div>
