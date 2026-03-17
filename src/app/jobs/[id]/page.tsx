@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { upload } from "@vercel/blob/client";
@@ -378,6 +378,8 @@ export default function JobDetailPage() {
   const [uploadPhaseId, setUploadPhaseId] = useState("");
   const [fileFilter, setFileFilter] = useState<"all" | "photos" | "documents">("all");
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["__no_phase__"]));
+  const [lightbox, setLightbox] = useState<{ photos: Document[]; index: number } | null>(null);
+  const lightboxRef = useRef<HTMLDivElement>(null);
 
   // Production
   const [prodLogs, setProdLogs] = useState<ProductionLog[]>([]);
@@ -1042,17 +1044,15 @@ export default function JobDetailPage() {
                   📷 Photos ({photos.length})
                 </p>
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                  {photos.map((doc) => (
-                    <a
+                  {photos.map((doc, idx) => (
+                    <button
                       key={doc.id}
-                      href={doc.fileUrl}
-                      target="_blank"
-                      rel="noreferrer"
+                      onClick={() => setLightbox({ photos, index: idx })}
                       className="aspect-square rounded-lg overflow-hidden bg-gray-100 hover:opacity-90 transition-opacity"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={doc.fileUrl} alt={doc.name} className="w-full h-full object-cover" />
-                    </a>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -2413,6 +2413,56 @@ export default function JobDetailPage() {
                 {savingAssign ? "Assigning..." : "Assign"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Photo lightbox */}
+      {lightbox && (
+        <div
+          ref={lightboxRef}
+          className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center"
+          onClick={() => setLightbox(null)}
+        >
+          {/* Close */}
+          <button
+            onClick={() => setLightbox(null)}
+            className="absolute top-4 right-4 text-white text-2xl font-bold w-10 h-10 flex items-center justify-center rounded-full bg-black/40 hover:bg-black/60 z-10"
+          >✕</button>
+
+          {/* Counter */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white text-sm font-medium bg-black/40 px-3 py-1 rounded-full z-10">
+            {lightbox.index + 1} / {lightbox.photos.length}
+          </div>
+
+          {/* Prev */}
+          {lightbox.photos.length > 1 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setLightbox((lb) => lb ? { ...lb, index: (lb.index - 1 + lb.photos.length) % lb.photos.length } : null); }}
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-white text-3xl w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hover:bg-black/60 z-10"
+            >‹</button>
+          )}
+
+          {/* Image */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={lightbox.photos[lightbox.index].fileUrl}
+            alt={lightbox.photos[lightbox.index].name}
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-[90vw] max-h-[85vh] object-contain rounded shadow-2xl"
+          />
+
+          {/* Next */}
+          {lightbox.photos.length > 1 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setLightbox((lb) => lb ? { ...lb, index: (lb.index + 1) % lb.photos.length } : null); }}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-white text-3xl w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hover:bg-black/60 z-10"
+            >›</button>
+          )}
+
+          {/* Caption */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white text-sm bg-black/40 px-4 py-1.5 rounded-full max-w-xs truncate z-10">
+            {lightbox.photos[lightbox.index].name}
           </div>
         </div>
       )}
