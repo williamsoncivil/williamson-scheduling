@@ -293,7 +293,11 @@ export default function SchedulePage() {
     entries.filter((e) => e.job.id === jobId && isSameDay(parseDate(e.date), day));
 
   const getUnassignedForDay = (day: Date) =>
-    unassignedPhases.filter((p) => isSameDay(parseDate(p.startDate), day));
+    unassignedPhases.filter((p) => {
+      const start = parseDate(p.startDate);
+      const end = p.endDate ? parseDate(p.endDate) : start;
+      return day >= start && day <= end;
+    });
 
   const renderUnassignedPhase = (phase: UnassignedPhase) => (
     <div
