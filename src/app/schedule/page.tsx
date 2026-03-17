@@ -27,7 +27,7 @@ interface ScheduleEntry {
   endTime: string;
   notes: string | null;
   job: { id: string; name: string; color: string };
-  phase: { id: string; name: string; completion: number } | null;
+  phase: { id: string; name: string; completion: number; startDate: string | null; endDate: string | null } | null;
   user: { id: string; name: string; role: string };
 }
 
@@ -130,7 +130,16 @@ export default function SchedulePage() {
 
   const getEntriesForDay = (day: Date, entryList?: ScheduleEntry[]) => {
     const list = entryList ?? entries;
-    return list.filter((e) => isSameDay(parseDate(e.date), day));
+    return list.filter((e) => {
+      // If the entry has a phase with a date range, spread it across all days in that range
+      if (e.phase?.startDate) {
+        const start = parseDate(e.phase.startDate);
+        const end = e.phase.endDate ? parseDate(e.phase.endDate) : start;
+        return day >= start && day <= end;
+      }
+      // Otherwise just match the specific entry date
+      return isSameDay(parseDate(e.date), day);
+    });
   };
 
   const prevPeriod = () => setCurrentDate(viewMode === "month" ? subMonths(currentDate, 1) : subWeeks(currentDate, 1));
@@ -290,7 +299,15 @@ export default function SchedulePage() {
   };
 
   const getEntriesForJobAndDay = (jobId: string, day: Date) =>
-    entries.filter((e) => e.job.id === jobId && isSameDay(parseDate(e.date), day));
+    entries.filter((e) => {
+      if (e.job.id !== jobId) return false;
+      if (e.phase?.startDate) {
+        const start = parseDate(e.phase.startDate);
+        const end = e.phase.endDate ? parseDate(e.phase.endDate) : start;
+        return day >= start && day <= end;
+      }
+      return isSameDay(parseDate(e.date), day);
+    });
 
   const getUnassignedForDay = (day: Date) =>
     unassignedPhases.filter((p) => {

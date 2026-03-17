@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
       user: { select: { id: true, name: true, role: true } },
       supervisor: { select: { id: true, name: true } },
       job: { select: { id: true, name: true, color: true } },
-      phase: { select: { id: true, name: true, completion: true } },
+      phase: { select: { id: true, name: true, completion: true, startDate: true, endDate: true } },
     },
   });
 
