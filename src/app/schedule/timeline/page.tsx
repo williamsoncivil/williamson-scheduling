@@ -99,7 +99,8 @@ const PALETTE = [
   "#14b8a6", "#eab308",
 ];
 
-const JOB_LABEL_WIDTH = 200;
+const DEFAULT_SIDEBAR_WIDTH = 200;
+const MIN_SIDEBAR_WIDTH = 120;
 const ROW_HEIGHT = 48;
 const BAR_HEIGHT = 28;
 
@@ -139,6 +140,50 @@ export default function TimelinePage() {
     x: number;
     y: number;
   } | null>(null);
+
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("gantt-sidebar-width");
+      if (stored) return Math.max(MIN_SIDEBAR_WIDTH, Number(stored));
+    }
+    return DEFAULT_SIDEBAR_WIDTH;
+  });
+
+  const startSidebarDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+    const onMove = (me: MouseEvent) => {
+      const maxW = Math.floor(window.innerWidth * 0.6);
+      const newWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(maxW, startWidth + me.clientX - startX));
+      setSidebarWidth(newWidth);
+      localStorage.setItem("gantt-sidebar-width", String(newWidth));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const startSidebarTouchDrag = (e: React.TouchEvent) => {
+    const startX = e.touches[0].clientX;
+    const startWidth = sidebarWidth;
+    const onMove = (te: TouchEvent) => {
+      te.preventDefault();
+      const maxW = Math.floor(window.innerWidth * 0.6);
+      const newWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(maxW, startWidth + te.touches[0].clientX - startX));
+      setSidebarWidth(newWidth);
+      localStorage.setItem("gantt-sidebar-width", String(newWidth));
+    };
+    const onEnd = () => {
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onEnd);
+    };
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onEnd);
+  };
 
   const [optimisticDates, setOptimisticDates] = useState<Record<string, { startDate: string; endDate: string }>>({});
   const [hiddenJobIds, setHiddenJobIds] = useState<Set<string>>(new Set());
@@ -370,8 +415,8 @@ export default function TimelinePage() {
             <div className="flex">
               {/* ── Sticky job-name column ─────────────────────────────────────── */}
               <div
-                className="shrink-0 border-r border-gray-200 bg-white z-10 sticky left-0"
-                style={{ width: JOB_LABEL_WIDTH }}
+                className="shrink-0 bg-white z-10 sticky left-0"
+                style={{ width: sidebarWidth }}
               >
                 <div className="h-10 border-b border-gray-100 flex items-center px-3">
                   <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Job</span>
@@ -390,8 +435,15 @@ export default function TimelinePage() {
                 ))}
               </div>
 
+              {/* ── Drag handle ───────────────────────────────────────────────── */}
+              <div
+                className="w-1.5 shrink-0 cursor-col-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 transition-colors z-10 sticky left-0 border-x border-gray-200"
+                onMouseDown={startSidebarDrag}
+                onTouchStart={startSidebarTouchDrag}
+              />
+
               {/* ── Scrollable timeline area ───────────────────────────────────── */}
-              <div ref={scrollRef} className="flex-1 overflow-x-auto" style={{ cursor: "grab" }}
+              <div ref={scrollRef} className="flex-1 overflow-x-auto min-w-0" style={{ cursor: "grab" }}
                 onMouseDown={(e) => {
                   if ((e.target as HTMLElement).closest("button,select,input,a")) return;
                   const el = scrollRef.current;

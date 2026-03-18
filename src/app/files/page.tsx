@@ -102,6 +102,16 @@ export default function FilesPage() {
       .then((d) => setDocuments(d));
   };
 
+  const deleteDoc = async (docId: string) => {
+    if (!window.confirm("Delete this file? This cannot be undone.")) return;
+    const res = await fetch(`/api/documents/${docId}`, { method: "DELETE" });
+    if (res.ok) {
+      setDocuments((prev) => prev.filter((d) => d.id !== docId));
+    } else {
+      alert("Failed to delete file.");
+    }
+  };
+
   const uploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -348,22 +358,31 @@ export default function FilesPage() {
                 </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
                   {displayedPhotos.map((doc, idx) => (
-                    <button
+                    <div
                       key={doc.id}
-                      onClick={() => setLightboxIndex(idx)}
-                      className="group relative aspect-square rounded-xl overflow-hidden bg-gray-100 hover:opacity-90 transition-opacity"
+                      className="group relative aspect-square rounded-xl overflow-hidden bg-gray-100"
                     >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={doc.fileUrl} alt={doc.name} className="w-full h-full object-cover" />
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-                      <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                        <p className="text-white text-xs truncate">{doc.name}</p>
-                        <p className="text-white/70 text-xs">{doc.job.name}</p>
-                        {doc.phase && (
-                          <span className="inline-block mt-0.5 text-[10px] bg-white/20 text-white px-1.5 py-0.5 rounded-full">{doc.phase.name}</span>
-                        )}
-                      </div>
-                    </button>
+                      <button
+                        onClick={() => setLightboxIndex(idx)}
+                        className="absolute inset-0 w-full h-full hover:opacity-90 transition-opacity"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={doc.fileUrl} alt={doc.name} className="w-full h-full object-cover" />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                        <div className="absolute bottom-0 left-0 right-0 p-2 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                          <p className="text-white text-xs truncate">{doc.name}</p>
+                          <p className="text-white/70 text-xs">{doc.job.name}</p>
+                          {doc.phase && (
+                            <span className="inline-block mt-0.5 text-[10px] bg-white/20 text-white px-1.5 py-0.5 rounded-full">{doc.phase.name}</span>
+                          )}
+                        </div>
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteDoc(doc.id); }}
+                        className="absolute top-1.5 right-1.5 z-10 w-6 h-6 flex items-center justify-center rounded-full bg-black/50 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500"
+                        title="Delete photo"
+                      >✕</button>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -392,35 +411,44 @@ export default function FilesPage() {
 
                       <div className="bg-white rounded-xl shadow-sm divide-y divide-gray-100">
                         {items.map((doc) => (
-                          <a
+                          <div
                             key={doc.id}
-                            href={doc.fileUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="flex items-center gap-4 p-4 hover:bg-gray-50 transition-colors"
+                            className="flex items-center gap-2 hover:bg-gray-50 transition-colors"
                           >
-                            <div className="w-10 h-10 flex items-center justify-center bg-blue-50 rounded-lg text-xl shrink-0">
-                              {extIcon(doc.name)}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <p className="font-medium text-sm text-gray-900 truncate">{doc.name}</p>
-                                {doc.phase && groupBy === "none" && (
-                                  <span className="inline-block text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full whitespace-nowrap">
-                                    {doc.phase.name}
-                                  </span>
-                                )}
+                            <a
+                              href={doc.fileUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="flex items-center gap-4 p-4 flex-1 min-w-0"
+                            >
+                              <div className="w-10 h-10 flex items-center justify-center bg-blue-50 rounded-lg text-xl shrink-0">
+                                {extIcon(doc.name)}
                               </div>
-                              <p className="text-xs text-gray-500 mt-0.5">
-                                {doc.job.name}
-                                {" · "}
-                                {doc.uploadedBy.name}
-                                {" · "}
-                                {format(parseISO(doc.createdAt), "MMM d, yyyy")}
-                              </p>
-                            </div>
-                            <span className="text-xs text-blue-600 shrink-0">Open ↗</span>
-                          </a>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <p className="font-medium text-sm text-gray-900 truncate">{doc.name}</p>
+                                  {doc.phase && groupBy === "none" && (
+                                    <span className="inline-block text-[10px] font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                      {doc.phase.name}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                  {doc.job.name}
+                                  {" · "}
+                                  {doc.uploadedBy.name}
+                                  {" · "}
+                                  {format(parseISO(doc.createdAt), "MMM d, yyyy")}
+                                </p>
+                              </div>
+                              <span className="text-xs text-blue-600 shrink-0">Open ↗</span>
+                            </a>
+                            <button
+                              onClick={() => deleteDoc(doc.id)}
+                              className="shrink-0 mr-4 text-gray-300 hover:text-red-500 transition-colors p-1 rounded"
+                              title="Delete file"
+                            >✕</button>
+                          </div>
                         ))}
                       </div>
                     </div>

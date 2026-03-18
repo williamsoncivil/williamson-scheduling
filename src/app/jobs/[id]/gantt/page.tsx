@@ -42,7 +42,8 @@ type ViewMode = "week" | "month" | "wholejob";
 
 const ROW_HEIGHT = 48;
 const BAR_HEIGHT = 28;
-const SIDEBAR_WIDTH = 200;
+const DEFAULT_SIDEBAR_WIDTH = 200;
+const MIN_SIDEBAR_WIDTH = 120;
 
 function getPhaseColor(phase: Phase): string {
   if (!phase.startDate || !phase.endDate) return "#94a3b8"; // slate — no dates
@@ -67,6 +68,13 @@ export default function JobGanttPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("month");
   const [currentDate, setCurrentDate] = useState(new Date());
   const [popover, setPopover] = useState<{ phase: Phase; x: number; y: number } | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("gantt-sidebar-width");
+      if (stored) return Math.max(MIN_SIDEBAR_WIDTH, Number(stored));
+    }
+    return DEFAULT_SIDEBAR_WIDTH;
+  });
   const timelineRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -107,10 +115,46 @@ export default function JobGanttPage() {
     const viewEnd = addDays(ends.reduce((a, b) => (a > b ? a : b)), 2);
     const totalDays = Math.max(differenceInDays(viewEnd, viewStart) + 1, 1);
     const containerW = containerRef.current?.clientWidth ?? 800;
-    const availableW = containerW - SIDEBAR_WIDTH;
+    const availableW = containerW - sidebarWidth;
     const dayWidth = Math.max(20, Math.floor(availableW / totalDays));
     return { viewStart, viewEnd, dayWidth };
-  }, [viewMode, currentDate, phases]);
+  }, [viewMode, currentDate, phases, sidebarWidth]);
+
+  const startSidebarDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+    const onMove = (me: MouseEvent) => {
+      const maxW = Math.floor(window.innerWidth * 0.6);
+      const newWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(maxW, startWidth + me.clientX - startX));
+      setSidebarWidth(newWidth);
+      localStorage.setItem("gantt-sidebar-width", String(newWidth));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const startSidebarTouchDrag = (e: React.TouchEvent) => {
+    const startX = e.touches[0].clientX;
+    const startWidth = sidebarWidth;
+    const onMove = (te: TouchEvent) => {
+      te.preventDefault();
+      const maxW = Math.floor(window.innerWidth * 0.6);
+      const newWidth = Math.max(MIN_SIDEBAR_WIDTH, Math.min(maxW, startWidth + te.touches[0].clientX - startX));
+      setSidebarWidth(newWidth);
+      localStorage.setItem("gantt-sidebar-width", String(newWidth));
+    };
+    const onEnd = () => {
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onEnd);
+    };
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onEnd);
+  };
 
   const { viewStart, viewEnd, dayWidth } = getViewRange();
   const totalDays = Math.max(differenceInDays(viewEnd, viewStart) + 1, 1);
@@ -264,8 +308,8 @@ export default function JobGanttPage() {
           <div className="flex">
             {/* Left sidebar - phase names */}
             <div
-              className="shrink-0 border-r border-gray-200 bg-white z-10"
-              style={{ width: SIDEBAR_WIDTH }}
+              className="shrink-0 bg-white z-10"
+              style={{ width: sidebarWidth }}
             >
               {/* Header spacer */}
               <div className="h-10 border-b border-gray-100 flex items-center px-3">
@@ -290,8 +334,15 @@ export default function JobGanttPage() {
               ))}
             </div>
 
+            {/* Drag handle */}
+            <div
+              className="w-1.5 shrink-0 cursor-col-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 transition-colors z-10 border-x border-gray-200"
+              onMouseDown={startSidebarDrag}
+              onTouchStart={startSidebarTouchDrag}
+            />
+
             {/* Timeline */}
-            <div className="flex-1 overflow-x-auto" style={{ WebkitOverflowScrolling: "touch" }}>
+            <div className="flex-1 overflow-x-auto min-w-0" style={{ WebkitOverflowScrolling: "touch" }}>
               <div style={{ width: timelineWidth, minWidth: "100%" }}>
                 {/* Month labels for whole job view */}
                 {viewMode === "wholejob" && (
