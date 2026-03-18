@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Layout from "@/components/Layout";
 import { format, parseISO } from "date-fns";
 import { upload } from "@vercel/blob/client";
@@ -42,6 +42,8 @@ export default function FilesPage() {
   const [filterCategory, setFilterCategory] = useState<CategoryFilter>("all");
   const [groupBy, setGroupBy] = useState<GroupBy>("none");
   const [loading, setLoading] = useState(true);
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
+  const lightboxRef = useRef<HTMLDivElement>(null);
 
   // Upload state
   const [uploadJobId, setUploadJobId] = useState("");
@@ -143,6 +145,40 @@ export default function FilesPage() {
 
   const displayedPhotos = filterCategory === "document" ? [] : photos;
   const displayedDocs = filterCategory === "photo" ? [] : docs;
+
+  // Lightbox keyboard navigation
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+    const n = displayedPhotos.length;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") setLightboxIndex((i) => i !== null ? (i - 1 + n) % n : null);
+      else if (e.key === "ArrowRight") setLightboxIndex((i) => i !== null ? (i + 1) % n : null);
+      else if (e.key === "Escape") setLightboxIndex(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightboxIndex, displayedPhotos.length]);
+
+  // Lightbox touch swipe
+  useEffect(() => {
+    const el = lightboxRef.current;
+    if (!el || lightboxIndex === null) return;
+    const n = displayedPhotos.length;
+    let startX = 0;
+    const onStart = (e: TouchEvent) => { startX = e.touches[0].clientX; e.preventDefault(); };
+    const onEnd = (e: TouchEvent) => {
+      const diff = startX - e.changedTouches[0].clientX;
+      if (Math.abs(diff) > 40) {
+        setLightboxIndex((i) => i !== null ? (diff > 0 ? (i + 1) % n : (i - 1 + n) % n) : null);
+      }
+    };
+    el.addEventListener("touchstart", onStart, { passive: false });
+    el.addEventListener("touchend", onEnd, { passive: false });
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchend", onEnd);
+    };
+  }, [lightboxIndex, displayedPhotos.length]);
 
   // Group docs by phase
   const groupedDocs = (() => {
@@ -311,12 +347,10 @@ export default function FilesPage() {
                   <span className="text-sm font-normal text-gray-500">({displayedPhotos.length})</span>
                 </h2>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                  {displayedPhotos.map((doc) => (
-                    <a
+                  {displayedPhotos.map((doc, idx) => (
+                    <button
                       key={doc.id}
-                      href={doc.fileUrl}
-                      target="_blank"
-                      rel="noreferrer"
+                      onClick={() => setLightboxIndex(idx)}
                       className="group relative aspect-square rounded-xl overflow-hidden bg-gray-100 hover:opacity-90 transition-opacity"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -329,7 +363,7 @@ export default function FilesPage() {
                           <span className="inline-block mt-0.5 text-[10px] bg-white/20 text-white px-1.5 py-0.5 rounded-full">{doc.phase.name}</span>
                         )}
                       </div>
-                    </a>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -397,6 +431,56 @@ export default function FilesPage() {
           </div>
         )}
       </div>
+
+      {/* Photo lightbox */}
+      {lightboxIndex !== null && (
+        <div
+          ref={lightboxRef}
+          className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center"
+          onClick={() => setLightboxIndex(null)}
+        >
+          {/* Close */}
+          <button
+            onClick={() => setLightboxIndex(null)}
+            className="absolute top-4 right-4 text-white text-2xl font-bold w-10 h-10 flex items-center justify-center rounded-full bg-black/40 hover:bg-black/60 z-10"
+          >✕</button>
+
+          {/* Counter */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white text-sm font-medium bg-black/40 px-3 py-1 rounded-full z-10">
+            {lightboxIndex + 1} / {displayedPhotos.length}
+          </div>
+
+          {/* Prev */}
+          {displayedPhotos.length > 1 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setLightboxIndex((i) => i !== null ? (i - 1 + displayedPhotos.length) % displayedPhotos.length : null); }}
+              className="absolute left-4 top-1/2 -translate-y-1/2 text-white text-3xl w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hover:bg-black/60 z-10"
+            >‹</button>
+          )}
+
+          {/* Image */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={displayedPhotos[lightboxIndex].fileUrl}
+            alt={displayedPhotos[lightboxIndex].name}
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-[90vw] max-h-[85vh] object-contain rounded shadow-2xl"
+          />
+
+          {/* Next */}
+          {displayedPhotos.length > 1 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setLightboxIndex((i) => i !== null ? (i + 1) % displayedPhotos.length : null); }}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-white text-3xl w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hover:bg-black/60 z-10"
+            >›</button>
+          )}
+
+          {/* Caption */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white text-sm bg-black/40 px-4 py-1.5 rounded-full max-w-xs truncate z-10">
+            {displayedPhotos[lightboxIndex].name}
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }
