@@ -435,12 +435,15 @@ export default function TimelinePage() {
                 ))}
               </div>
 
-              {/* ── Drag handle ───────────────────────────────────────────────── */}
+              {/* ── Drag handle — wide enough for mobile touch ─────────────── */}
               <div
-                className="w-1.5 shrink-0 cursor-col-resize bg-gray-200 hover:bg-blue-400 active:bg-blue-500 transition-colors z-10 sticky left-0 border-x border-gray-200"
+                className="w-5 shrink-0 cursor-col-resize z-10 sticky left-0 flex items-stretch"
+                style={{ touchAction: "none" }}
                 onMouseDown={startSidebarDrag}
                 onTouchStart={startSidebarTouchDrag}
-              />
+              >
+                <div className="w-1.5 mx-auto bg-gray-200 hover:bg-blue-400 active:bg-blue-500 transition-colors border-x border-gray-200" />
+              </div>
 
               {/* ── Scrollable timeline area ───────────────────────────────────── */}
               <div ref={scrollRef} className="flex-1 overflow-x-auto min-w-0" style={{ cursor: "grab" }}

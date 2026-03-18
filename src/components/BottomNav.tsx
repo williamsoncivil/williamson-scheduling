@@ -8,6 +8,7 @@ const navLinks = [
   { href: "/schedule", label: "Schedule", icon: "📅" },
   { href: "/schedule/gantt", label: "Gantt", icon: "📊" },
   { href: "/schedule/timeline", label: "Timeline", icon: "👤" },
+  { href: "/files", label: "Files", icon: "📄" },
   { href: "/messages", label: "Messages", icon: "💬" },
   { href: "/people", label: "People", icon: "👥" },
   { href: "/settings", label: "Settings", icon: "⚙️" },

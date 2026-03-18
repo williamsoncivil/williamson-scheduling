@@ -380,6 +380,8 @@ export default function JobDetailPage() {
   const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set(["__no_phase__"]));
   const [lightbox, setLightbox] = useState<{ photos: Document[]; index: number } | null>(null);
   const lightboxRef = useRef<HTMLDivElement>(null);
+  const lightboxImgRef = useRef<HTMLImageElement>(null);
+  const lightboxImgScaleRef = useRef(1);
 
   // Production
   const [prodLogs, setProdLogs] = useState<ProductionLog[]>([]);
@@ -475,22 +477,78 @@ export default function JobDetailPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [lightbox]);
 
-  // Lightbox touch swipe (native events for iOS PWA)
+  // Reset zoom when lightbox photo changes
+  useEffect(() => {
+    lightboxImgScaleRef.current = 1;
+    if (lightboxImgRef.current) lightboxImgRef.current.style.transform = "scale(1)";
+  }, [lightbox?.index]);
+
+  // Lightbox touch: swipe to navigate + pinch to zoom
   useEffect(() => {
     const el = lightboxRef.current;
     if (!el || !lightbox) return;
+    const n = lightbox.photos.length;
     let startX = 0;
-    const onStart = (e: TouchEvent) => { startX = e.touches[0].clientX; e.preventDefault(); };
-    const onEnd = (e: TouchEvent) => {
-      const diff = startX - e.changedTouches[0].clientX;
-      if (Math.abs(diff) > 40) {
-        setLightbox((lb) => lb ? { ...lb, index: diff > 0 ? (lb.index + 1) % lb.photos.length : (lb.index - 1 + lb.photos.length) % lb.photos.length } : null);
+    let startY = 0;
+    let isPinching = false;
+    let pinchStartDist = 0;
+    let pinchStartScale = 1;
+
+    const getTouchDist = (touches: TouchList) => {
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+
+    const onStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        isPinching = true;
+        pinchStartDist = getTouchDist(e.touches);
+        pinchStartScale = lightboxImgScaleRef.current;
+        e.preventDefault();
+      } else {
+        isPinching = false;
+        startX = e.touches[0].clientX;
+        startY = e.touches[0].clientY;
       }
     };
+
+    const onMove = (e: TouchEvent) => {
+      if (isPinching && e.touches.length === 2) {
+        e.preventDefault();
+        const newDist = getTouchDist(e.touches);
+        const newScale = Math.max(1, Math.min(4, pinchStartScale * newDist / pinchStartDist));
+        lightboxImgScaleRef.current = newScale;
+        if (lightboxImgRef.current) lightboxImgRef.current.style.transform = `scale(${newScale})`;
+      } else if (!isPinching && lightboxImgScaleRef.current <= 1.05) {
+        e.preventDefault();
+      }
+    };
+
+    const onEnd = (e: TouchEvent) => {
+      if (isPinching) {
+        if (lightboxImgScaleRef.current < 1.1) {
+          lightboxImgScaleRef.current = 1;
+          if (lightboxImgRef.current) lightboxImgRef.current.style.transform = "scale(1)";
+        }
+        isPinching = false;
+        return;
+      }
+      const diffX = startX - e.changedTouches[0].clientX;
+      const diffY = startY - e.changedTouches[0].clientY;
+      if (lightboxImgScaleRef.current <= 1.05 && Math.abs(diffX) > 40 && Math.abs(diffX) > Math.abs(diffY)) {
+        lightboxImgScaleRef.current = 1;
+        if (lightboxImgRef.current) lightboxImgRef.current.style.transform = "scale(1)";
+        setLightbox((lb) => lb ? { ...lb, index: diffX > 0 ? (lb.index + 1) % n : (lb.index - 1 + n) % n } : null);
+      }
+    };
+
     el.addEventListener("touchstart", onStart, { passive: false });
-    el.addEventListener("touchend", onEnd, { passive: false });
+    el.addEventListener("touchmove", onMove, { passive: false });
+    el.addEventListener("touchend", onEnd);
     return () => {
       el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchmove", onMove);
       el.removeEventListener("touchend", onEnd);
     };
   }, [lightbox]);
@@ -2478,16 +2536,19 @@ export default function JobDetailPage() {
         <div
           ref={lightboxRef}
           className="fixed inset-0 z-[9999] bg-black/90 flex items-center justify-center"
+          style={{ touchAction: "manipulation" }}
           onClick={() => setLightbox(null)}
         >
-          {/* Close */}
+          {/* Close — large tap target for mobile */}
           <button
-            onClick={() => setLightbox(null)}
-            className="absolute top-4 right-4 text-white text-2xl font-bold w-10 h-10 flex items-center justify-center rounded-full bg-black/40 hover:bg-black/60 z-10"
+            onClick={(e) => { e.stopPropagation(); setLightbox(null); }}
+            onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); setLightbox(null); }}
+            className="absolute top-3 right-3 text-white text-xl font-bold w-14 h-14 flex items-center justify-center rounded-full bg-black/50 hover:bg-black/70 z-20"
+            style={{ touchAction: "manipulation" }}
           >✕</button>
 
           {/* Counter */}
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white text-sm font-medium bg-black/40 px-3 py-1 rounded-full z-10">
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white text-sm font-medium bg-black/40 px-3 py-1 rounded-full z-10 pointer-events-none">
             {lightbox.index + 1} / {lightbox.photos.length}
           </div>
 
@@ -2495,29 +2556,35 @@ export default function JobDetailPage() {
           {lightbox.photos.length > 1 && (
             <button
               onClick={(e) => { e.stopPropagation(); setLightbox((lb) => lb ? { ...lb, index: (lb.index - 1 + lb.photos.length) % lb.photos.length } : null); }}
-              className="absolute left-4 top-1/2 -translate-y-1/2 text-white text-3xl w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hover:bg-black/60 z-10"
+              onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); setLightbox((lb) => lb ? { ...lb, index: (lb.index - 1 + lb.photos.length) % lb.photos.length } : null); }}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-white text-3xl w-14 h-14 flex items-center justify-center rounded-full bg-black/40 hover:bg-black/60 z-20"
+              style={{ touchAction: "manipulation" }}
             >‹</button>
           )}
 
           {/* Image */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
+            ref={lightboxImgRef}
             src={lightbox.photos[lightbox.index].fileUrl}
             alt={lightbox.photos[lightbox.index].name}
             onClick={(e) => e.stopPropagation()}
             className="max-w-[90vw] max-h-[85vh] object-contain rounded shadow-2xl"
+            style={{ touchAction: "none", transformOrigin: "center center" }}
           />
 
           {/* Next */}
           {lightbox.photos.length > 1 && (
             <button
               onClick={(e) => { e.stopPropagation(); setLightbox((lb) => lb ? { ...lb, index: (lb.index + 1) % lb.photos.length } : null); }}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-white text-3xl w-12 h-12 flex items-center justify-center rounded-full bg-black/40 hover:bg-black/60 z-10"
+              onTouchEnd={(e) => { e.stopPropagation(); e.preventDefault(); setLightbox((lb) => lb ? { ...lb, index: (lb.index + 1) % lb.photos.length } : null); }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-white text-3xl w-14 h-14 flex items-center justify-center rounded-full bg-black/40 hover:bg-black/60 z-20"
+              style={{ touchAction: "manipulation" }}
             >›</button>
           )}
 
           {/* Caption */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white text-sm bg-black/40 px-4 py-1.5 rounded-full max-w-xs truncate z-10">
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white text-sm bg-black/40 px-4 py-1.5 rounded-full max-w-xs truncate z-10 pointer-events-none">
             {lightbox.photos[lightbox.index].name}
           </div>
         </div>
