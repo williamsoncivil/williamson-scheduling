@@ -463,6 +463,44 @@ export default function JobDetailPage() {
     if (activeTab === "messages") fetchMessages();
   }, [msgPhaseFilter, activeTab, fetchMessages]);
 
+  // Lightbox keyboard navigation
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") setLightbox((lb) => lb ? { ...lb, index: (lb.index - 1 + lb.photos.length) % lb.photos.length } : null);
+      else if (e.key === "ArrowRight") setLightbox((lb) => lb ? { ...lb, index: (lb.index + 1) % lb.photos.length } : null);
+      else if (e.key === "Escape") setLightbox(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox]);
+
+  // Lightbox touch swipe (native events for iOS PWA)
+  useEffect(() => {
+    const el = lightboxRef.current;
+    if (!el || !lightbox) return;
+    let startX = 0;
+    const onStart = (e: TouchEvent) => { startX = e.touches[0].clientX; e.preventDefault(); };
+    const onEnd = (e: TouchEvent) => {
+      const diff = startX - e.changedTouches[0].clientX;
+      if (Math.abs(diff) > 40) {
+        setLightbox((lb) => lb ? { ...lb, index: diff > 0 ? (lb.index + 1) % lb.photos.length : (lb.index - 1 + lb.photos.length) % lb.photos.length } : null);
+      }
+    };
+    el.addEventListener("touchstart", onStart, { passive: false });
+    el.addEventListener("touchend", onEnd, { passive: false });
+    return () => {
+      el.removeEventListener("touchstart", onStart);
+      el.removeEventListener("touchend", onEnd);
+    };
+  }, [lightbox]);
+
+  const deleteDocument = async (docId: string) => {
+    if (!confirm("Delete this file?")) return;
+    await fetch(`/api/documents/${docId}`, { method: "DELETE" });
+    fetchDocuments();
+  };
+
   const saveOverview = async () => {
     await fetch(`/api/jobs/${jobId}`, {
       method: "PUT",
@@ -1045,14 +1083,20 @@ export default function JobDetailPage() {
                 </p>
                 <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
                   {photos.map((doc, idx) => (
-                    <button
-                      key={doc.id}
-                      onClick={() => setLightbox({ photos, index: idx })}
-                      className="aspect-square rounded-lg overflow-hidden bg-gray-100 hover:opacity-90 transition-opacity"
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={doc.fileUrl} alt={doc.name} className="w-full h-full object-cover" />
-                    </button>
+                    <div key={doc.id} className="relative aspect-square rounded-lg overflow-hidden bg-gray-100 group">
+                      <button
+                        onClick={() => setLightbox({ photos, index: idx })}
+                        className="w-full h-full hover:opacity-90 transition-opacity"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={doc.fileUrl} alt={doc.name} className="w-full h-full object-cover" />
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteDocument(doc.id); }}
+                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                        title="Delete photo"
+                      >✕</button>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -1066,24 +1110,30 @@ export default function JobDetailPage() {
                 </p>
                 <div className="space-y-2">
                   {docFiles.map((doc) => (
-                    <a
-                      key={doc.id}
-                      href={doc.fileUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-3 p-2.5 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                    >
-                      <div className="w-8 h-8 flex items-center justify-center bg-blue-50 rounded text-lg shrink-0">
-                        📄
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-xs text-gray-900 truncate">{doc.name}</p>
-                        <p className="text-xs text-gray-400">
-                          {doc.uploadedBy.name} · {format(parseISO(doc.createdAt), "MMM d")}
-                        </p>
-                      </div>
-                      <span className="text-xs text-blue-600 shrink-0">↗</span>
-                    </a>
+                    <div key={doc.id} className="flex items-center gap-3 p-2.5 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                      <a
+                        href={doc.fileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-3 flex-1 min-w-0"
+                      >
+                        <div className="w-8 h-8 flex items-center justify-center bg-blue-50 rounded text-lg shrink-0">
+                          📄
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-xs text-gray-900 truncate">{doc.name}</p>
+                          <p className="text-xs text-gray-400">
+                            {doc.uploadedBy.name} · {format(parseISO(doc.createdAt), "MMM d")}
+                          </p>
+                        </div>
+                        <span className="text-xs text-blue-600 shrink-0">↗</span>
+                      </a>
+                      <button
+                        onClick={() => deleteDocument(doc.id)}
+                        className="text-gray-300 hover:text-red-500 transition-colors shrink-0 text-base px-1"
+                        title="Delete file"
+                      >🗑</button>
+                    </div>
                   ))}
                 </div>
               </div>

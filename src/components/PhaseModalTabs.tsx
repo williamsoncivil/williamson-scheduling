@@ -92,6 +92,27 @@ export function PhaseModalTabs({ phaseId, jobId }: PhaseModalTabsProps) {
   // Load team on first render
   useEffect(() => { fetchTeam(); }, []);
 
+  const deleteDoc = async (docId: string) => {
+    if (!confirm("Delete this file?")) return;
+    await fetch(`/api/documents/${docId}`, { method: "DELETE" });
+    setDocs(null);
+    const res = await fetch(`/api/documents?jobId=${jobId}&phaseId=${phaseId}`);
+    if (res.ok) { const data = await res.json(); setDocs(Array.isArray(data) ? data : (data.documents ?? [])); }
+  };
+
+  // Lightbox keyboard navigation
+  useEffect(() => {
+    if (lightboxIndex === null) return;
+    const images = (docs ?? []).filter(d => d.fileType.startsWith("image/"));
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") setLightboxIndex((i) => i !== null ? (i - 1 + images.length) % images.length : null);
+      else if (e.key === "ArrowRight") setLightboxIndex((i) => i !== null ? (i + 1) % images.length : null);
+      else if (e.key === "Escape") setLightboxIndex(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightboxIndex, docs]);
+
   // Native touch events for lightbox swipe (iOS PWA fix)
   useEffect(() => {
     const el = lightboxRef.current;
@@ -249,11 +270,18 @@ export function PhaseModalTabs({ phaseId, jobId }: PhaseModalTabsProps) {
                 return (
                   <div key={doc.id} className="flex items-center gap-2">
                     {isImage(doc.fileType) ? (
-                      <img
-                        src={doc.fileUrl} alt={doc.name}
-                        onClick={() => setLightboxIndex(imgIdx)}
-                        className="w-10 h-10 object-cover rounded border border-gray-200 shrink-0 cursor-pointer hover:opacity-80 transition-opacity"
-                      />
+                      <div className="relative shrink-0 group">
+                        <img
+                          src={doc.fileUrl} alt={doc.name}
+                          onClick={() => setLightboxIndex(imgIdx)}
+                          className="w-10 h-10 object-cover rounded border border-gray-200 cursor-pointer hover:opacity-80 transition-opacity"
+                        />
+                        <button
+                          onClick={() => deleteDoc(doc.id)}
+                          className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-black/60 text-white text-[9px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                          title="Delete"
+                        >✕</button>
+                      </div>
                     ) : (
                       <div className="w-10 h-10 bg-red-50 border border-red-200 rounded flex items-center justify-center shrink-0 text-[10px] font-bold text-red-600">PDF</div>
                     )}
@@ -262,6 +290,13 @@ export function PhaseModalTabs({ phaseId, jobId }: PhaseModalTabsProps) {
                         className="text-xs text-blue-600 hover:underline truncate block font-medium">{doc.name}</a>
                       <p className="text-xs text-gray-400">{doc.uploadedBy.name} · {formatDate(doc.createdAt)}</p>
                     </div>
+                    {!isImage(doc.fileType) && (
+                      <button
+                        onClick={() => deleteDoc(doc.id)}
+                        className="text-gray-300 hover:text-red-500 transition-colors shrink-0 text-sm"
+                        title="Delete"
+                      >🗑</button>
+                    )}
                   </div>
                 );
               })}
