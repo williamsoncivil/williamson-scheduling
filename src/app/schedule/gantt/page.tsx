@@ -90,7 +90,8 @@ interface JobWithPhases {
 const ROW_HEIGHT = 44;
 const JOB_HEADER_HEIGHT = 36;
 const BAR_HEIGHT = 26;
-const SIDEBAR_WIDTH = 220;
+const DEFAULT_sidebarWidth = 220;
+const MIN_sidebarWidth = 120;
 const DAY_WIDTH = 20; // px per day — fixed for continuous scroll
 
 // Total continuous range: 26 weeks before today → 26 weeks after today (52 weeks)
@@ -121,8 +122,52 @@ export default function MasterGanttPage() {
     saving: boolean; error: string;
   } | null>(null);
 
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("gantt-sidebar-width");
+      if (stored) return Math.max(MIN_sidebarWidth, Number(stored));
+    }
+    return DEFAULT_sidebarWidth;
+  });
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const hasScrolledRef = useRef(false);
+
+  const startSidebarDrag = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+    const onMove = (me: MouseEvent) => {
+      const maxW = Math.floor(window.innerWidth * 0.6);
+      const newWidth = Math.max(MIN_sidebarWidth, Math.min(maxW, startWidth + me.clientX - startX));
+      setSidebarWidth(newWidth);
+      localStorage.setItem("gantt-sidebar-width", String(newWidth));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const startSidebarTouchDrag = (e: React.TouchEvent) => {
+    const startX = e.touches[0].clientX;
+    const startWidth = sidebarWidth;
+    const onMove = (te: TouchEvent) => {
+      te.preventDefault();
+      const maxW = Math.floor(window.innerWidth * 0.6);
+      const newWidth = Math.max(MIN_sidebarWidth, Math.min(maxW, startWidth + te.touches[0].clientX - startX));
+      setSidebarWidth(newWidth);
+      localStorage.setItem("gantt-sidebar-width", String(newWidth));
+    };
+    const onEnd = () => {
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onEnd);
+    };
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onEnd);
+  };
 
   // Continuous timeline range
   const viewStart = startOfWeek(subWeeks(new Date(), WEEKS_BEFORE), { weekStartsOn: 0 });
@@ -157,7 +202,7 @@ export default function MasterGanttPage() {
   useEffect(() => {
     if (!loading && !hasScrolledRef.current && scrollRef.current) {
       const container = scrollRef.current;
-      const containerWidth = container.clientWidth - SIDEBAR_WIDTH;
+      const containerWidth = container.clientWidth - sidebarWidth;
       const scrollTarget = todayPx - containerWidth / 2;
       container.scrollLeft = Math.max(0, scrollTarget);
       hasScrolledRef.current = true;
@@ -174,7 +219,7 @@ export default function MasterGanttPage() {
 
   const scrollToToday = () => {
     if (scrollRef.current) {
-      const containerWidth = scrollRef.current.clientWidth - SIDEBAR_WIDTH;
+      const containerWidth = scrollRef.current.clientWidth - sidebarWidth;
       const scrollTarget = todayPx - containerWidth / 2;
       scrollRef.current.scrollTo({ left: Math.max(0, scrollTarget), behavior: "smooth" });
     }
@@ -430,7 +475,7 @@ export default function MasterGanttPage() {
               }}
             >
               {/* Inner wrapper: explicit full width so sticky left works */}
-              <div style={{ width: SIDEBAR_WIDTH + timelineWidth, minWidth: SIDEBAR_WIDTH + timelineWidth }}>
+              <div style={{ width: sidebarWidth + timelineWidth, minWidth: sidebarWidth + timelineWidth }}>
 
                 {/* ── Sticky header row (top: 0) ────────────────────────────── */}
                 <div
@@ -439,14 +484,14 @@ export default function MasterGanttPage() {
                     position: "sticky",
                     top: 0,
                     zIndex: 30,
-                    width: SIDEBAR_WIDTH + timelineWidth,
+                    width: sidebarWidth + timelineWidth,
                   }}
                 >
                   {/* Corner cell: sticky left AND part of sticky top row */}
                   <div
-                    className="shrink-0 border-r border-b border-gray-200 bg-white"
+                    className="shrink-0 border-r border-b border-gray-200 bg-white relative"
                     style={{
-                      width: SIDEBAR_WIDTH,
+                      width: sidebarWidth,
                       position: "sticky",
                       left: 0,
                       zIndex: 40,
@@ -457,6 +502,15 @@ export default function MasterGanttPage() {
                     </div>
                     <div className="h-10 flex items-center px-3">
                       <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Job / Phase</span>
+                    </div>
+                    {/* Drag handle on header corner */}
+                    <div
+                      className="absolute top-0 right-0 bottom-0 w-5 cursor-col-resize z-10 flex items-stretch"
+                      style={{ touchAction: "none" }}
+                      onMouseDown={(e) => { e.stopPropagation(); startSidebarDrag(e); }}
+                      onTouchStart={(e) => { e.stopPropagation(); startSidebarTouchDrag(e); }}
+                    >
+                      <div className="w-1.5 ml-auto bg-gray-200 hover:bg-blue-400 active:bg-blue-500 transition-colors" />
                     </div>
                   </div>
 
@@ -506,13 +560,13 @@ export default function MasterGanttPage() {
                 {/* ── End sticky header ─────────────────────────────────────── */}
 
                 {/* ── Body row (sidebar + timeline) ─────────────────────────── */}
-                <div className="flex" style={{ width: SIDEBAR_WIDTH + timelineWidth }}>
+                <div className="flex" style={{ width: sidebarWidth + timelineWidth }}>
 
                   {/* ── Sticky left sidebar ───────────────────────────────────── */}
                   <div
                     className="shrink-0 border-r border-gray-200 bg-white"
                     style={{
-                      width: SIDEBAR_WIDTH,
+                      width: sidebarWidth,
                       position: "sticky",
                       left: 0,
                       zIndex: 20,
@@ -554,6 +608,16 @@ export default function MasterGanttPage() {
                         </div>
                       );
                     })}
+
+                    {/* Drag handle — sticky right edge of sidebar */}
+                    <div
+                      className="absolute top-0 right-0 w-5 cursor-col-resize z-30 flex items-stretch"
+                      style={{ height: totalHeight, touchAction: "none" }}
+                      onMouseDown={(e) => { e.stopPropagation(); startSidebarDrag(e); }}
+                      onTouchStart={(e) => { e.stopPropagation(); startSidebarTouchDrag(e); }}
+                    >
+                      <div className="w-1.5 ml-auto bg-gray-200 hover:bg-blue-400 active:bg-blue-500 transition-colors" />
+                    </div>
                   </div>
 
                   {/* ── Timeline area ────────────────────────────────────────── */}
