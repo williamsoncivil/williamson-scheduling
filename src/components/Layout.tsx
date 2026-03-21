@@ -2,6 +2,7 @@
 
 import Sidebar from "./Sidebar";
 import BottomNav from "./BottomNav";
+import AIChatWidget from "./AIChatWidget";
 import { useEffect, useState } from "react";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -31,6 +32,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       >
         {children}
       </main>
+      <AIChatWidget />
     </div>
   );
 }
