@@ -26,6 +26,8 @@ model User {
   messagesLastReadAt      DateTime?
   emailNotificationLevel  EmailNotificationLevel @default(ALL)
   mentions                MessageMention[]
+  telegramChatId          String?
+  endOfDayPrompt          Boolean @default(false)
 }
 
 model Job {

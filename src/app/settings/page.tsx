@@ -24,6 +24,10 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [emailNotificationLevel, setEmailNotificationLevel] = useState<"NONE" | "MENTIONS" | "ALL">("ALL");
   const [savingPref, setSavingPref] = useState(false);
+  const [telegramChatId, setTelegramChatId] = useState("");
+  const [endOfDayPrompt, setEndOfDayPrompt] = useState(false);
+  const [savingTelegram, setSavingTelegram] = useState(false);
+  const [telegramSaved, setTelegramSaved] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editData, setEditData] = useState<Partial<User>>({});
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -61,8 +65,23 @@ export default function SettingsPage() {
       if (d.emailNotificationLevel === "NONE" || d.emailNotificationLevel === "MENTIONS" || d.emailNotificationLevel === "ALL") {
         setEmailNotificationLevel(d.emailNotificationLevel);
       }
+      if (d.telegramChatId) setTelegramChatId(d.telegramChatId);
+      if (typeof d.endOfDayPrompt === "boolean") setEndOfDayPrompt(d.endOfDayPrompt);
     });
   }, []);
+
+  const saveTelegramSettings = async () => {
+    setSavingTelegram(true);
+    setTelegramSaved(false);
+    await fetch("/api/users/me", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ telegramChatId: telegramChatId || null, endOfDayPrompt }),
+    });
+    setSavingTelegram(false);
+    setTelegramSaved(true);
+    setTimeout(() => setTelegramSaved(false), 3000);
+  };
 
   const setEmailLevel = async (val: "NONE" | "MENTIONS" | "ALL") => {
     setEmailNotificationLevel(val);
@@ -205,6 +224,48 @@ export default function SettingsPage() {
             ))}
           </div>
           {savingPref && <p className="text-xs text-gray-400 mt-2">Saving…</p>}
+        </div>
+
+        {/* ── Telegram / End-of-Day Prompts ── */}
+        <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
+          <h2 className="font-semibold text-gray-900 mb-1">End-of-Day Update Prompts</h2>
+          <p className="text-sm text-gray-500 mb-4">Receive a Telegram message at 5 PM on weekdays asking for phase progress updates.</p>
+
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-sm font-medium text-gray-900">End-of-day update prompt</p>
+              <p className="text-xs text-gray-500">Get a daily check-in message via Telegram</p>
+            </div>
+            <button
+              onClick={() => setEndOfDayPrompt(!endOfDayPrompt)}
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${endOfDayPrompt ? "bg-blue-600" : "bg-gray-300"}`}
+            >
+              <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${endOfDayPrompt ? "translate-x-6" : "translate-x-1"}`} />
+            </button>
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Telegram Chat ID</label>
+            <input
+              type="text"
+              value={telegramChatId}
+              onChange={(e) => setTelegramChatId(e.target.value)}
+              placeholder="e.g. 123456789"
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <p className="text-xs text-gray-400 mt-1">Start a chat with @WilliamsonSchedule_bot, then type /start to get your chat ID</p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={saveTelegramSettings}
+              disabled={savingTelegram}
+              className="bg-blue-600 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors disabled:opacity-50"
+            >
+              {savingTelegram ? "Saving…" : "Save"}
+            </button>
+            {telegramSaved && <p className="text-sm text-green-600">Saved!</p>}
+          </div>
         </div>
 
         {!isAdmin && (

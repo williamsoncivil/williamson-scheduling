@@ -10,7 +10,7 @@ export async function GET() {
 
   const user = await prisma.user.findUnique({
     where: { id: session.user.id },
-    select: { id: true, name: true, email: true, role: true, phone: true, emailNotificationLevel: true },
+    select: { id: true, name: true, email: true, role: true, phone: true, emailNotificationLevel: true, telegramChatId: true, endOfDayPrompt: true },
   });
 
   return NextResponse.json(user);
@@ -21,17 +21,19 @@ export async function PATCH(req: NextRequest) {
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const data: { emailNotificationLevel?: EmailNotificationLevel; phone?: string | null } = {};
+  const data: { emailNotificationLevel?: EmailNotificationLevel; phone?: string | null; telegramChatId?: string | null; endOfDayPrompt?: boolean } = {};
 
   if (body.emailNotificationLevel && Object.values(EmailNotificationLevel).includes(body.emailNotificationLevel)) {
     data.emailNotificationLevel = body.emailNotificationLevel as EmailNotificationLevel;
   }
   if ("phone" in body) data.phone = body.phone ?? null;
+  if ("telegramChatId" in body) data.telegramChatId = body.telegramChatId || null;
+  if ("endOfDayPrompt" in body) data.endOfDayPrompt = Boolean(body.endOfDayPrompt);
 
   const user = await prisma.user.update({
     where: { id: session.user.id },
     data,
-    select: { id: true, name: true, email: true, role: true, phone: true, emailNotificationLevel: true },
+    select: { id: true, name: true, email: true, role: true, phone: true, emailNotificationLevel: true, telegramChatId: true, endOfDayPrompt: true },
   });
 
   return NextResponse.json(user);
